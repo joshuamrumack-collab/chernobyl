@@ -11,6 +11,7 @@ var mt := 0.0
 var music_on := true
 var wind: AudioStreamPlayer
 var drone: AudioStreamPlayer
+var rain: AudioStreamPlayer
 
 const MEL := [69, -1, 72, -1, 76, -1, 74, 72, 71, -1, -1, -1, 69, -1, -1, -1, 64, -1, 69, -1, 71, -1, 72, 74, 71, -1, -1, 68, 69, -1, -1, -1,
 	76, -1, 77, 76, 74, -1, 72, -1, 71, -1, 72, 71, 69, -1, -1, -1, 65, -1, 69, -1, 72, -1, 71, 69, 68, -1, -1, -1, 69, -1, -1, -1]
@@ -29,6 +30,14 @@ func _ready() -> void:
 	b = _buf(0.45); _tone(b, 0, 300, 0.4, "tri", 0.5, 90); _make("hurt", b)
 	b = _buf(0.35); _noise(b, 0, 0.25, 0.4, 0.4); _tone(b, 0, 700, 0.3, "sine", 0.15, 200); _make("pop", b)
 	b = _buf(0.03); _noise(b, 0, 0.014, 1.6, 0.35, true); _tone(b, 0, 3200, 0.01, "sq", 0.25); _make("click", b, 8)
+	b = _buf(0.12); _noise(b, 0, 0.1, 0.9, 0.06); _make("step_soft", b, 4)
+	b = _buf(0.1); _noise(b, 0, 0.06, 0.7, 0.35); _tone(b, 0, 180, 0.05, "sine", 0.35, 90); _make("step_hard", b, 4)
+	b = _buf(0.5); _noise(b, 0, 0.35, 0.35, 0.5, true); _tone(b, 0.0, 1400, 0.06, "sq", 0.12); _tone(b, 0.38, 1400, 0.06, "sq", 0.12); _make("radio", b, 2)
+	var rb := _buf(3.0); var y := 0.0
+	for i in rb.size():
+		var x := randf() * 2.0 - 1.0; y += (x - y) * 0.25
+		rb[i] = (x - y) * 0.45 + (0.5 if randf() < 0.0008 else 0.0)
+	rain = AudioStreamPlayer.new(); rain.stream = _wav(rb, true); rain.volume_db = -14.0; add_child(rain)
 	wind = AudioStreamPlayer.new(); wind.stream = _wind(); wind.volume_db = -9.0; add_child(wind); wind.play()
 	drone = AudioStreamPlayer.new(); drone.stream = _drone(); drone.volume_db = -13.0; add_child(drone); drone.play()
 
@@ -40,6 +49,10 @@ func play(name: String, vol_db: float = 0.0, pitch: float = 1.0) -> void:
 func set_key(t: int) -> void:
 	transpose = t
 	drone.pitch_scale = pow(2.0, t / 12.0)
+
+func set_rain(on: bool) -> void:
+	if on and not rain.playing: rain.play()
+	elif not on: rain.stop()
 
 func set_muted(m: bool) -> void:
 	AudioServer.set_bus_mute(0, m)

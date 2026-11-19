@@ -7,6 +7,7 @@ var t := 0.0
 var phase := 0
 var item_i := 0
 var wait := 0.0
+var cranes := 0
 
 func _initialize() -> void:
 	game = load("res://main.tscn").instantiate()
@@ -36,11 +37,15 @@ func _process(delta: float) -> bool:
 				game.P.x = 0.0; game.P.z = -15.0; phase = 3
 		3:
 			game.P.inv = 999.0
+			if game.state == "crane" and game.crane_pc != null and game.crane_drop < 0.0:
+				var tg: Vector3 = game.crane_pc.target
+				game.crane_hook = Vector2(tg.x, tg.z); game.crane_vel = Vector2.ZERO; game.crane_sway = Vector2.ZERO
+				game.act_pressed(); cranes += 1
 			if game.state == "levelDone":
 				print("  level ", game.li, " done, built ", game.built, "/", game.need)
 				game.next_level(); phase = 1; wait = 1.5
 			elif game.state == "won":
-				print("  finale reached, built ", game.built, "/", game.need); phase = 4; wait = 7.0
+				print("  finale reached, built ", game.built, "/", game.need, " crane drops ", cranes, " stars ", game.save.stars); phase = 4; wait = 7.0
 		4:
 			print("win card open: ", game.hud.card_open("win"))
 			quit(0 if game.hud.card_open("win") else 1); return true

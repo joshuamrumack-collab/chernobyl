@@ -32,6 +32,26 @@ var lives_shown := 3
 var msg_t := 0.0
 var quality_b: Button
 var mute_b: Button
+var cont_b: Button
+var prog_l: Label
+var fact_root: Control
+var fact_l: Label
+var radio_p: PanelContainer
+var radio_ru: Label
+var radio_en: Label
+var radio_t := 0.0
+var title_root: Control
+var icon_c: Control
+var arrow_col := Color("#d9a441")
+var icon_id := "site"
+var touch_on := false
+var joy := Vector2.ZERO
+var joy_id := -1
+var joy_knob := Vector2.ZERO
+var joy_c: Control
+var run_b: TouchScreenButton
+var act_b: TouchScreenButton
+var act_l: Label
 
 signal pressed(id: String)
 
@@ -59,11 +79,13 @@ func _ready() -> void:
 	lvl_l = _label(hud_root, "", 17, CREAM, true); lvl_l.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM); lvl_l.offset_top = -56; lvl_l.offset_bottom = -8
 	lvl_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; lvl_l.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	# compass
-	arrow = Control.new(); arrow.size = Vector2(30, 30); arrow.pivot_offset = Vector2(15, 17); arrow.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	arrow.position = Vector2(-15, 60); arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE; hud_root.add_child(arrow)
-	arrow.draw.connect(func(): arrow.draw_colored_polygon(PackedVector2Array([Vector2(15, 0), Vector2(29, 28), Vector2(15, 21), Vector2(1, 28)]), GOLD))
-	ctext = _label(hud_root, "", 15, CREAM, false); ctext.set_anchors_preset(Control.PRESET_CENTER_TOP); ctext.position = Vector2(-300, 94); ctext.size = Vector2(600, 24)
+	arrow = Control.new(); arrow.anchor_left = 0.5; arrow.anchor_right = 0.5; arrow.offset_left = -15; arrow.offset_right = 15; arrow.offset_top = 60; arrow.offset_bottom = 90; arrow.pivot_offset = Vector2(15, 17)
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE; hud_root.add_child(arrow)
+	arrow.draw.connect(func(): arrow.draw_colored_polygon(PackedVector2Array([Vector2(15, 0), Vector2(29, 28), Vector2(15, 21), Vector2(1, 28)]), arrow_col))
+	ctext = _label(hud_root, "", 15, CREAM, false); ctext.anchor_left = 0.5; ctext.anchor_right = 0.5; ctext.offset_left = -300; ctext.offset_right = 300; ctext.offset_top = 94; ctext.offset_bottom = 118
 	ctext.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_c = Control.new(); icon_c.anchor_left = 0.5; icon_c.anchor_right = 0.5; icon_c.offset_left = -14; icon_c.offset_right = 14; icon_c.offset_top = 120; icon_c.offset_bottom = 142
+	icon_c.mouse_filter = Control.MOUSE_FILTER_IGNORE; hud_root.add_child(icon_c); icon_c.draw.connect(_draw_icon)
 	# dosimeter
 	det_panel = PanelContainer.new(); det_panel.add_theme_stylebox_override("panel", _box(Color("#5c5b33"), Color("#2b2a18"), 3, 10))
 	det_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT); det_panel.position = Vector2(-190, -196); det_panel.custom_minimum_size = Vector2(176, 0)
@@ -98,13 +120,16 @@ func _ready() -> void:
 	# cards
 	_menu(root)
 	_card(root, "help", "★", "КАК ИГРАТЬ", "How to play",
-		"Block No. 4 of the Chernobyl power plant lies in ruins and smoke is still rising from it. Collect building materials, carry them to the construction site and rebuild it until the smoke stops. Watch your radiation detector, falling junk, ceiling traps and patrol guards.\n\nWASD / arrows: walk   ·   Shift: run   ·   Q E / drag mouse: camera\nM: sound   ·   G: graphics HQ / LQ   ·   P: photo mode\nGreen glow = radiation   ·   Red stars = extra lives",
+		"Block No. 4 of the Chernobyl power plant lies in ruins and smoke is still rising from it. Collect building materials, carry them to the construction site and rebuild it until the smoke stops. Watch your radiation detector, falling junk, ceiling traps and patrol guards.\n\nWASD / arrows: walk   ·   Shift: run   ·   Q E / drag mouse: camera\nM: sound   ·   G: graphics HQ / LQ   ·   P: photo mode\nGreen glow = radiation   ·   Red stars = extra lives\n\nThe camera follows Oleg by itself. On a tablet use the joystick, RUN and OK buttons.\nLevel 3: steer the crane and lower the roof slabs onto the green outline.\nEarn up to 3 stars per level: finish it, lose no lives, and beat the target time.",
 		"НАЗАД · BACK", "back")
 	_card(root, "done", "★", "ОТЛИЧНО!", "Excellent work, comrade!", "", "ВПЕРЁД! · ONWARD!", "next")
 	_card(root, "over", "☢", "ИГРА ОКОНЧЕНА", "Game over", "Не сдавайся, товарищ!\nDon't give up, comrade! Try this level again.", "ЕЩЁ РАЗ · AGAIN", "retry")
 	_card(root, "win", "★", "ТЫ НАСТОЯЩИЙ ГЕРОЙ, ТОВАРИЩ!", "You are a real hero, comrade!", "Энергоблок №4 восстановлен!\nBlock No. 4 has been rebuilt and the smoke has stopped.\nOleg earns the medal \"Hero of Labour\"!", "ИГРАТЬ СНОВА · PLAY AGAIN", "again")
+	_radio_panel(root)
+	_title_card(root)
+	_touch(root)
 	fade_rect = _tint(root, Color(0, 0, 0, 0))
-	show_card("menu")
+	_fact_card(root)
 
 # ------------------------------------------------------------ builders
 func _tint(parent: Control, col: Color) -> ColorRect:
@@ -153,6 +178,8 @@ func _card(parent: Control, id: String, icon: String, title: String, sub: String
 	var t := _label(v, title, 52 if title.length() < 16 else 34, Color("#e0392b"), true); t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; t.custom_minimum_size = Vector2(490, 0)
 	var s := _label(v, sub, 22, GOLD, true); s.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; s.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var stars := Control.new(); stars.custom_minimum_size = Vector2(0, 46); stars.visible = false; v.add_child(stars)
+	stars.set_meta("n", 0); stars.draw.connect(func(): _draw_stars(stars))
 	var bd := _label(v, body, 17, CREAM, false); bd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bd.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; bd.custom_minimum_size = Vector2(490, 0)
 	var b := Button.new(); b.text = btn; b.focus_mode = Control.FOCUS_NONE
@@ -162,7 +189,7 @@ func _card(parent: Control, id: String, icon: String, title: String, sub: String
 	b.custom_minimum_size = Vector2(0, 52); b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	b.pressed.connect(func(): pressed.emit(action)); v.add_child(b)
 	dim.visible = false
-	cards[id] = {"root": dim, "title": t, "sub": s, "body": bd}
+	cards[id] = {"root": dim, "title": t, "sub": s, "body": bd, "stars": stars}
 
 func _big_button(parent: Node, text: String, action: String, primary: bool) -> Button:
 	var b := Button.new(); b.text = text; b.focus_mode = Control.FOCUS_NONE; b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -198,13 +225,130 @@ func _menu(parent: Control) -> void:
 	_label(v, "Comrade Oleg! The Motherland calls.\nRebuild Block No. 4 and stop the smoke.", 19, Color("#cdbf9a"), false)
 	var sp := Control.new(); sp.custom_minimum_size = Vector2(0, 14); v.add_child(sp)
 	_big_button(v, "ИГРАТЬ  ·  PLAY", "start", true)
+	cont_b = _big_button(v, "ПРОДОЛЖИТЬ  ·  CONTINUE", "continue", false); cont_b.visible = false
 	_big_button(v, "КАК ИГРАТЬ  ·  HOW TO PLAY", "help", false)
+	prog_l = _label(v, "", 17, GOLD, true)
 	var foot := _label(root, "A student game by DorkTeach   ·   Music: \"The Hero's March\"" + ("   ·   Click once to turn on the sound" if OS.has_feature("web") else ""), 14, Color("#cdbf9a"), false)
 	foot.anchor_top = 1.0; foot.anchor_bottom = 1.0; foot.offset_left = 22; foot.offset_top = -27
 	root.visible = false
 	cards["menu"] = {"root": root, "title": t, "sub": t, "body": t}
 
+func _radio_panel(root: Control) -> void:
+	radio_p = PanelContainer.new(); radio_p.add_theme_stylebox_override("panel", _box(Color(0.08, 0.1, 0.07, 0.88), Color("#6b6a3c"), 2, 8))
+	radio_p.anchor_top = 1.0; radio_p.anchor_bottom = 1.0; radio_p.offset_left = 14; radio_p.offset_top = -250; radio_p.offset_bottom = -150; radio_p.grow_vertical = Control.GROW_DIRECTION_BEGIN; radio_p.custom_minimum_size = Vector2(430, 0)
+	radio_p.mouse_filter = Control.MOUSE_FILTER_IGNORE; root.add_child(radio_p)
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 2); radio_p.add_child(v)
+	_label(v, "РАДИО · RADIO  —  control room", 12, Color("#b8d48a"), true)
+	radio_ru = _label(v, "", 18, CREAM, true); radio_ru.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; radio_ru.custom_minimum_size = Vector2(410, 0)
+	radio_en = _label(v, "", 16, Color("#cdbf9a"), false); radio_en.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; radio_en.custom_minimum_size = Vector2(410, 0)
+	radio_p.modulate.a = 0.0
+
+func _title_card(root: Control) -> void:
+	title_root = VBoxContainer.new(); title_root.set_anchors_preset(Control.PRESET_CENTER); title_root.position = Vector2(-500, -170); title_root.size = Vector2(1000, 300)
+	title_root.mouse_filter = Control.MOUSE_FILTER_IGNORE; root.add_child(title_root)
+	var t := _label(title_root, "ЧЕРНОБЫЛЬ", 118, Color("#e0392b"), true); t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t.add_theme_color_override("font_outline_color", Color("#3a0c06")); t.add_theme_constant_override("outline_size", 20)
+	_label(title_root, "CHERNOBYL  ·  BLOCK No. 4", 32, GOLD, true).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_label(title_root, "A student game by DorkTeach", 18, CREAM, false).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_root.modulate.a = 0.0
+
+func _fact_card(root: Control) -> void:
+	fact_root = CenterContainer.new(); fact_root.set_anchors_preset(Control.PRESET_FULL_RECT); fact_root.mouse_filter = Control.MOUSE_FILTER_IGNORE; root.add_child(fact_root)
+	var p := PanelContainer.new(); var sb := _box(Color("#221b15"), GOLD, 2, 6); sb.content_margin_left = 30; sb.content_margin_right = 30; sb.content_margin_top = 18; sb.content_margin_bottom = 20
+	p.add_theme_stylebox_override("panel", sb); p.mouse_filter = Control.MOUSE_FILTER_IGNORE; fact_root.add_child(p)
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 8); p.add_child(v)
+	_label(v, "ЗНАЕШЬ ЛИ ТЫ?  ·  DID YOU KNOW?", 22, GOLD, true).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	fact_l = _label(v, "", 19, CREAM, false); fact_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; fact_l.custom_minimum_size = Vector2(560, 0)
+	fact_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_label(v, "Loading…", 14, Color("#cdbf9a"), false).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	fact_root.modulate.a = 0.0
+
+func _touch(root: Control) -> void:
+	for a in ["touch_run", "touch_act"]:
+		if not InputMap.has_action(a):
+			InputMap.add_action(a)
+	touch_on = DisplayServer.is_touchscreen_available()
+	joy_c = Control.new(); joy_c.mouse_filter = Control.MOUSE_FILTER_IGNORE; joy_c.set_anchors_preset(Control.PRESET_FULL_RECT); root.add_child(joy_c)
+	joy_c.draw.connect(_draw_joy)
+	var tex := Mk.radial(Color(1, 1, 1, 0.35), Color(1, 1, 1, 0.08), 128)
+	run_b = _tbutton(root, tex, "touch_run", "RUN"); act_b = _tbutton(root, tex, "touch_act", "OK")
+	act_l = act_b.get_child(0)
+	act_b.pressed.connect(func(): pressed.emit("act"))
+
+func _tbutton(root: Control, tex: Texture2D, action: String, text: String) -> TouchScreenButton:
+	var b := TouchScreenButton.new(); b.texture_normal = tex; b.action = action; b.visibility_mode = TouchScreenButton.VISIBILITY_TOUCHSCREEN_ONLY
+	b.scale = Vector2(0.75, 0.75); root.add_child(b)
+	var l := _label(b, text, 30, Color.WHITE, true); l.size = Vector2(128, 128); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return b
+
+func _joy_center() -> Vector2:
+	return Vector2(120, get_viewport().get_visible_rect().size.y - 130)
+
+func _input(e: InputEvent) -> void:
+	if e is InputEventScreenTouch:
+		touch_on = true
+		if e.pressed and joy_id < 0 and hud_root.visible and e.position.distance_to(_joy_center()) < 100:
+			joy_id = e.index; _joy_set(e.position); get_viewport().set_input_as_handled()
+		elif not e.pressed and e.index == joy_id:
+			joy_id = -1; joy = Vector2.ZERO; joy_knob = Vector2.ZERO; joy_c.queue_redraw()
+	elif e is InputEventScreenDrag and e.index == joy_id:
+		_joy_set(e.position); get_viewport().set_input_as_handled()
+
+func _joy_set(p: Vector2) -> void:
+	var d := p - _joy_center()
+	if d.length() > 60.0: d = d.normalized() * 60.0
+	joy_knob = d; joy = Vector2(d.x, -d.y) / 60.0; joy_c.queue_redraw()
+
+func _draw_joy() -> void:
+	if not touch_on or not hud_root.visible: return
+	var c := _joy_center()
+	joy_c.draw_circle(c, 66, Color(1, 1, 1, 0.1)); joy_c.draw_arc(c, 66, 0, TAU, 40, Color(0.85, 0.65, 0.25, 0.6), 3)
+	joy_c.draw_circle(c + joy_knob, 28, Color(0.75, 0.15, 0.1, 0.75))
+
+func _draw_stars(c: Control) -> void:
+	var n: int = c.get_meta("n")
+	for i in 3:
+		var pts := star_pts(Vector2(c.size.x / 2.0 + (i - 1) * 52, 23), 20)
+		if i < n:
+			c.draw_colored_polygon(pts, GOLD)
+		else:
+			c.draw_colored_polygon(pts, Color(0.25, 0.2, 0.15))
+		c.draw_polyline(pts + PackedVector2Array([pts[0]]), Color("#3a2a10"), 2.0)
+
+func _draw_icon() -> void:
+	var c := icon_c; var col := arrow_col
+	match icon_id:
+		"concrete": c.draw_rect(Rect2(6, 3, 16, 16), col); c.draw_rect(Rect2(6, 3, 16, 16), Color(0, 0, 0, 0.6), false, 2.0)
+		"steel": c.draw_rect(Rect2(2, 3, 24, 4), col); c.draw_rect(Rect2(2, 15, 24, 4), col); c.draw_rect(Rect2(12, 3, 4, 16), col)
+		"lead":
+			c.draw_rect(Rect2(3, 5, 22, 12), col); c.draw_circle(Vector2(14, 11), 4, Color(0.1, 0.1, 0.1))
+		"brick":
+			for r in 3: c.draw_rect(Rect2(4 + (r % 2) * 3, 2 + r * 6, 18, 5), col)
+		_: c.draw_colored_polygon(star_pts(Vector2(14, 11), 10), col)
+
 # ------------------------------------------------------------ API
+func set_card_stars(id: String, n: int) -> void:
+	var s: Control = cards[id].stars
+	s.visible = n >= 0; s.set_meta("n", n); s.queue_redraw()
+
+func set_menu_progress(cont_text: String, prog: String) -> void:
+	cont_b.visible = cont_text != ""; cont_b.text = cont_text; prog_l.text = prog
+
+func show_fact(text: String) -> void:
+	fact_l.text = text; create_tween().tween_property(fact_root, "modulate:a", 1.0, 0.5)
+
+func hide_fact() -> void:
+	create_tween().tween_property(fact_root, "modulate:a", 0.0, 0.4)
+
+func radio(ru: String, en: String, sec: float = 5.0) -> void:
+	radio_ru.text = ru; radio_en.text = en; radio_t = sec
+
+func set_title_alpha(a: float) -> void:
+	title_root.modulate.a = a
+
+func set_act_text(t: String) -> void:
+	act_l.text = t
+
 func show_card(id: String) -> void:
 	for k in cards:
 		cards[k].root.visible = (k == id)
@@ -231,8 +375,10 @@ func show_msg(ru: String, en: String, sec: float = 2.5) -> void:
 func subs(ru: String, en: String) -> void:
 	sub_ru.text = ru; sub_en.text = en
 
-func set_compass(angle: float, text: String) -> void:
+func set_compass(angle: float, text: String, col: Color = GOLD, icon: String = "site") -> void:
 	arrow.rotation = angle; ctext.text = text
+	if col != arrow_col or icon != icon_id:
+		arrow_col = col; icon_id = icon; arrow.queue_redraw(); icon_c.queue_redraw()
 
 func set_detector(v: float, hot: bool, needle_deg: float, dose: float, rad: float) -> void:
 	reading.text = ("%.2f" % v) if v < 10.0 else ("%.1f" % v)
@@ -265,6 +411,14 @@ func _process(delta: float) -> void:
 		msg_t -= delta; mv.modulate.a = 1.0
 	else:
 		mv.modulate.a = maxf(0.0, mv.modulate.a - delta * 2.5)
+	if radio_t > 0.0:
+		radio_t -= delta; radio_p.modulate.a = minf(1.0, radio_p.modulate.a + delta * 4.0)
+	else:
+		radio_p.modulate.a = maxf(0.0, radio_p.modulate.a - delta * 2.0)
+	var vs := get_viewport().get_visible_rect().size
+	run_b.position = Vector2(vs.x - 330, vs.y - 120); act_b.position = Vector2(vs.x - 430, vs.y - 120)
+	run_b.visible = hud_root.visible; act_b.visible = hud_root.visible
+	joy_c.queue_redraw()
 
 static func star_pts(c: Vector2, r: float) -> PackedVector2Array:
 	var p := PackedVector2Array()

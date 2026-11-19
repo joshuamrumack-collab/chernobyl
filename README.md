@@ -12,6 +12,17 @@ The game opens on a hero shot: Oleg stands on the hill beside a waving Soviet fl
 2. **ПРИПЯТЬ – The Ghost Town.** Falling junk and ceiling traps. Rebuild the walls of the reactor hall.
 3. **АКТИВНАЯ ЗОНА – The Reactor Zone.** Night and strong radiation. Put a new roof on the reactor hall and stop the smoke.
 
+## Features
+- **Stars:** earn up to 3 stars per level: finish it, lose no lives, and beat the target time (3:00, 4:00, 5:00).
+- **Saved progress:** the browser remembers how far you got and your best stars. **Continue** in the menu jumps straight to the next level.
+- **Crane mini-game:** in level 3 you steer the orange crane yourself and lower each roof slab onto the green outline.
+- **Pripyat:** level 2 has School No. 3, Hotel Polesie with its big roof letters, and an amusement park with the Ferris wheel and bumper cars to walk through.
+- **Weather:** rain in Pripyat and snow on the night shift.
+- **Radio:** the control room radios short tips in Russian and English.
+- **Did you know?** Real facts about Chernobyl appear at the end of each level and while the next one loads.
+- **Touch controls:** a joystick plus RUN and OK buttons appear on tablets and touchscreens.
+- **School mode:** if the computer is slow, low graphics switch on automatically. Press G to change it.
+
 ## Controls
 | Key | Action |
 |---|---|
@@ -19,7 +30,7 @@ The game opens on a hero shot: Oleg stands on the hill beside a waving Soviet fl
 | Shift | Run |
 | Q / E, or drag with the mouse | Turn the camera (optional: it follows Oleg by itself) |
 | Mouse wheel | Zoom |
-| Space / Enter | Start, skip the intro, continue |
+| Space / Enter | Start, skip the intro, continue, lower the crane slab |
 | M | Sound on / off |
 | G | Graphics: high (HQ) / low (LQ) |
 | P | Photo mode (the camera circles the plant) |

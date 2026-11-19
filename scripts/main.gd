@@ -126,6 +126,37 @@ var cam_dist := 10.0
 var dragging := false
 var photo := false
 var manual_cam := 0.0
+var level_t := 0.0
+var lost_level := 0
+var save := {"unlocked": 0, "stars": [0, 0, 0], "hq": -1}
+var aq := {"t": 0.0, "n": 0, "done": false}
+var radio_done := {}
+var crane_pc = null
+var crane_hook := Vector2.ZERO
+var crane_vel := Vector2.ZERO
+var crane_sway := Vector2.ZERO
+var crane_drop := -1.0
+var crane_y := 0.0
+var crane_slab_y := 0.0
+var crane_creak := 0.0
+var crane_outline: MeshInstance3D
+var crane_cable: ImmediateMesh
+var weather: CPUParticles3D
+var step_phase := 0
+var raw_delta := 0.016
+const PAR := [180.0, 240.0, 300.0]
+const SAVE_PATH := "user://chernobyl_save.json"
+const LOAD_FACTS := [
+	"The accident happened on 26 April 1986, during a safety test at Reactor No. 4 of the Chernobyl power plant in what is now Ukraine.",
+	"The Exclusion Zone around the plant covers about 2,600 square kilometres. Today wolves, elk and rare Przewalski's horses live there.",
+	"The \"Red Forest\" near the plant got its name because the pine trees turned reddish-brown and died from the radiation.",
+	"The last working reactor at Chernobyl, Reactor No. 3, was shut down in December 2000.",
+	"Radiation can't be seen, heard or smelled. That is why workers carried dosimeters to measure it.",
+	"Lead is very good at blocking radiation, which is why it is used in shielding and protective aprons."]
+const LEVEL_FACTS := [
+	"A dosimeter like the DP-5 measures how much radiation is in the air around you. The needle shows the dose rate, and the clicks come faster when the radiation gets stronger.",
+	"Pripyat was built in 1970 for the families of the power plant workers, and about 49,000 people lived there. The whole town was evacuated on 27 April 1986, the day after the accident. It is still empty today.",
+	"In real life Block No. 4 was never rebuilt. A few months after the accident, workers covered it with a huge concrete and steel shell called the \"sarcophagus\". In 2016 an even bigger steel arch, the New Safe Confinement, was slid over it."]
 var photo_t := 0.0
 var P := {"x": 0.0, "z": 0.0, "y": 0.0, "face": PI, "walk": 0.0, "inv": 0.0, "carry": 0, "dose": 0.0, "cp": Vector2.ZERO, "moving": false, "cheer": 0.0}
 
@@ -171,6 +202,9 @@ func _ready() -> void:
 	oleg = make_oleg(); add_child(oleg.root)
 	load_level(0)
 	P.y = h(START.x, START.y)
+	load_save()
+	if int(save.hq) >= 0:
+		hq = int(save.hq) == 1; aq.done = true
 	set_quality(hq)
 	hud.set_hud_visible(false)
 	enter_menu()
@@ -966,9 +1000,9 @@ func add_item(x: float, z: float, type: Dictionary) -> void:
 	var y = h(x, z); var grp = Node3D.new(); grp.position = Vector3(x, y, z); world.add_child(grp)
 	var model = mat_model(type.id); model.position.y = 1; grp.add_child(model)
 	var pm = PlaneMesh.new(); pm.size = Vector2(2.4, 2.4)
-	Mk.mi(grp, pm, Mk.glow(C(0xffd27a, 0.6), true, glow_tex), Vector3(0, 0.1, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	Mk.mi(grp, pm, Mk.glow(C(type.c, 0.6), true, glow_tex), Vector3(0, 0.1, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var bm = CylinderMesh.new(); bm.top_radius = 0.25; bm.bottom_radius = 0.25; bm.height = 18; bm.cap_top = false; bm.cap_bottom = false; bm.radial_segments = 10
-	Mk.mi(grp, bm, Mk.glow(C(0xffd27a, 0.14)), Vector3(0, 9, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	Mk.mi(grp, bm, Mk.glow(C(type.c, 0.16)), Vector3(0, 9, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	items.append({"x": x, "z": z, "y": y, "type": type, "grp": grp, "model": model, "got": false, "ph": R(0, 6)})
 
 func add_token(x: float, z: float) -> void:
@@ -1033,7 +1067,7 @@ func load_level(i: int) -> void:
 	li = i; var L: Dictionary = LEVELS[i]; rng.seed = 1000 + i * 7919
 	world = Node3D.new(); add_child(world)
 	circles = []; boxes = []; reserved = []; items = []; tokens = []; zones = []; guards = []; debris = []; traps = []; lamps = []; queue = []; anims = []; pops = []
-	built = 0; need = STAGE_COUNTS[i]; done_t = -1.0; debris_t = 3.0
+	built = 0; need = STAGE_COUNTS[i]; done_t = -1.0; debris_t = 3.0; level_t = 0.0; lost_level = 0; radio_done = {}; crane_pc = null; step_phase = 0
 	sky_mat.sky_top_color = C(L.sky_top); sky_mat.sky_horizon_color = C(L.sky_hor)
 	sky_mat.ground_horizon_color = C(L.fog); sky_mat.ground_bottom_color = C(L.fog).darkened(0.4)
 	env.fog_light_color = C(L.fog); env.fog_depth_begin = L.fog_near; env.fog_depth_end = L.fog_far
@@ -1073,7 +1107,8 @@ func load_level(i: int) -> void:
 			var s = spot(2)
 			if s != null: bale(s.x, s.y)
 	elif i == 1:
-		cooling_tower(-100, -95); ferris(-82, -15); horizon_pines(160, 0x1e231a); grass(400, 0x7a6e45)
+		cooling_tower(-100, -95); horizon_pines(160, 0x1e231a); grass(400, 0x7a6e45)
+		pripyat_landmarks()
 		for k in 8:
 			var w = R(8, 14); var d = R(6, 9); var hh = R(10, 22)
 			var s = spot(maxf(w, d) / 2.0 + 2.0)
@@ -1154,6 +1189,25 @@ func load_level(i: int) -> void:
 	var q = QuadMesh.new(); q.size = Vector2.ONE * (0.14 if i == 2 else 0.09)
 	var dm2 = Mk.glow(C(L.dust, 0.7 if i == 2 else 0.55), i == 2); dm2.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	q.material = dm2; dust.mesh = q; dust.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; world.add_child(dust)
+	# weather: rain in Pripyat, snow on the night shift
+	weather = null; sfx.set_rain(i == 1)
+	if i >= 1:
+		weather = CPUParticles3D.new(); weather.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX; weather.local_coords = false
+		var wq = QuadMesh.new(); var wm = Mk.glow(Color(0.75, 0.82, 0.9, 0.35) if i == 1 else Color(1, 1, 1, 0.85), false, glow_tex if i == 2 else null)
+		wm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES; wq.material = wm
+		if i == 1:
+			wq.size = Vector2(0.03, 0.7); weather.amount = 700 if hq else 350; weather.lifetime = 0.9; weather.emission_box_extents = Vector3(22, 1, 22)
+			weather.direction = Vector3(0.1, -1, 0); weather.spread = 2; weather.initial_velocity_min = 20; weather.initial_velocity_max = 24; weather.gravity = Vector3.ZERO
+		else:
+			wq.size = Vector2(0.12, 0.12); weather.amount = 900 if hq else 450; weather.lifetime = 8.0; weather.emission_box_extents = Vector3(26, 1, 26)
+			weather.direction = Vector3(0.2, -1, 0); weather.spread = 25; weather.initial_velocity_min = 1.0; weather.initial_velocity_max = 1.8; weather.gravity = Vector3(0.25, -0.15, 0)
+		weather.preprocess = weather.lifetime; weather.mesh = wq; weather.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world.add_child(weather)
+	# crane mini-game helpers (level 3)
+	crane_cable = ImmediateMesh.new(); var cm2 = StandardMaterial3D.new(); cm2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; cm2.albedo_color = C(0x1a1a1a)
+	var cn = MeshInstance3D.new(); cn.mesh = crane_cable; cn.material_override = cm2; cn.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; world.add_child(cn)
+	var ob = BoxMesh.new(); ob.size = Vector3(6.3, 1.0, 17.3)
+	crane_outline = Mk.mi(world, ob, Mk.glow(C(0x7dff4a, 0.25)), Vector3.ZERO); crane_outline.visible = false; crane_outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# player
 	P.x = START.x; P.z = START.y; P.face = PI; P.inv = 1.5; P.carry = 0; P.dose = 0.0; P.cp = START; P.cheer = 0.0
 	cam_yaw = 0.0; cam_pitch = 0.42; cam_dist = 10.0
@@ -1171,12 +1225,14 @@ func load_level(i: int) -> void:
 func _on_hud(id: String) -> void:
 	match id:
 		"start", "again": start_game()
+		"continue": start_at(int(save.unlocked))
+		"act": act_pressed()
 		"help": hud.show_card("help")
 		"back": hud.show_card("menu")
 		"next": next_level()
 		"retry": retry()
 		"mute": toggle_mute()
-		"quality": set_quality(not hq)
+		"quality": set_quality(not hq); save.hq = 1 if hq else 0; write_save()
 
 func toggle_mute() -> void:
 	muted = not muted; sfx.set_muted(muted); hud.set_mute_text(muted)
@@ -1191,8 +1247,50 @@ func set_quality(q: bool) -> void:
 		smoke.amount = 200 if hq else 100
 	hud.set_quality_text(hq)
 
+func load_save() -> void:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return
+	var f = FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var d = JSON.parse_string(f.get_as_text())
+	if d is Dictionary:
+		for k in d:
+			save[k] = d[k]
+
+func write_save() -> void:
+	var f = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(save))
+
+func total_stars() -> int:
+	var t = 0
+	for s in save.stars:
+		t += int(s)
+	return t
+
+func update_menu_progress() -> void:
+	var u = int(save.unlocked)
+	var cont = ""
+	if u > 0:
+		cont = "ПРОДОЛЖИТЬ · CONTINUE: LEVEL %d" % (u + 1)
+	var prog = ""
+	if total_stars() > 0 or u > 0:
+		prog = "Stars earned: %d / 9" % total_stars()
+	hud.set_menu_progress(cont, prog)
+
+func radio(key: String, ru: String, en: String, delay: float = 0.0) -> void:
+	if radio_done.has(key):
+		return
+	radio_done[key] = true
+	if delay > 0.0:
+		await get_tree().create_timer(delay).timeout
+	if state != "play" and state != "crane":
+		return
+	sfx.play("radio", -6.0); hud.radio(ru, en, 6.0)
+
 func enter_menu() -> void:
-	state = "menu"; menu_t = 0.0; sfx.music_on = false; hud.show_card("menu")
+	state = "menu"; menu_t = 0.0; sfx.music_on = false; hud.show_card("menu"); update_menu_progress()
 	P.x = HERO.x; P.z = HERO.y; P.y = h(HERO.x, HERO.y); P.face = atan2(-4.0 - HERO.x, -37.0 - HERO.y); P.inv = 0.0; P.cheer = 0.0
 	if march.stream:
 		march.volume_db = -3.0; march.play()
@@ -1200,6 +1298,14 @@ func enter_menu() -> void:
 func fade_march() -> void:
 	if march.playing:
 		var tw = create_tween(); tw.tween_property(march, "volume_db", -40.0, 1.6); tw.tween_callback(march.stop)
+
+func start_at(i: int) -> void:
+	if i <= 0:
+		start_game(); return
+	said = false; lives = 3; play_t = 0.0; sfx.music_on = true; sfx.step = 0
+	fade_march(); hud.show_card(""); hud.fade(true); hud.show_fact(pick(LOAD_FACTS))
+	await get_tree().create_timer(3.4).timeout
+	load_level(i); state = "play"; hud.fade(false); hud.hide_fact(); hud.set_hud_visible(true); level_banner()
 
 func start_game() -> void:
 	said = false; lives = 3; play_t = 0.0; sfx.music_on = true; sfx.step = 0
@@ -1216,7 +1322,7 @@ func start_cutscene() -> void:
 func end_cutscene() -> void:
 	if state != "intro":
 		return
-	state = "play"; hud.skip_l.visible = false; hud.subs("", "")
+	state = "play"; hud.skip_l.visible = false; hud.subs("", ""); hud.set_title_alpha(0.0)
 	var bx = -4.2; var bz = 48.6
 	bike.g.position = Vector3(bx, h(bx, bz), bz); bike.g.rotation = Vector3(0, 0.4, 0.3); circles.append(Vector3(bx, bz, 0.7))
 	P.x = START.x; P.z = START.y; P.face = PI; cam_yaw = 0.0; reset_pose()
@@ -1224,14 +1330,19 @@ func end_cutscene() -> void:
 
 func level_banner() -> void:
 	var L: Dictionary = LEVELS[li]
+	match li:
+		0: radio("start", "Олег, приём! Это пульт управления.", "Oleg, come in! This is the control room. Bring the materials to the yellow construction pad.", 10.0)
+		1: radio("start", "Олег, в Припяти опасно. Смотри наверх!", "Oleg, Pripyat is dangerous. Watch out for junk falling from the roofs!", 10.0)
+		_: radio("start", "Ночная смена, Олег. Последний рывок!", "Night shift, Oleg. One last push: the new roof over the reactor hall!", 10.0)
 	hud.show_msg("УРОВЕНЬ %d: %s" % [li + 1, L.ru], L.en + " — " + L.tip_en, 5.0)
 	await get_tree().create_timer(5.2).timeout
 	if state == "play":
 		hud.show_msg(L.tip_ru, L.tip_en, 4.0)
 
 func next_level() -> void:
-	hud.show_card(""); hud.fade(true)
-	await get_tree().create_timer(0.7).timeout
+	hud.show_card(""); hud.fade(true); hud.show_fact(pick(LOAD_FACTS))
+	await get_tree().create_timer(3.4).timeout
+	hud.hide_fact()
 	load_level(li + 1); state = "play"; hud.fade(false); hud.set_hud_visible(true); level_banner()
 
 func retry() -> void:
@@ -1254,7 +1365,7 @@ func say(text: String, lang: String, pitch: float = 0.7, rate: float = 0.9) -> b
 func hurt(kind: String) -> void:
 	if P.inv > 0 or state != "play":
 		return
-	lives -= 1; var hh: Array = HURT[kind]; hud.show_msg(hh[0], hh[1], 2.4); hud.hit_flash()
+	lives -= 1; lost_level += 1; var hh: Array = HURT[kind]; hud.show_msg(hh[0], hh[1], 2.4); hud.hit_flash()
 	shake = 0.6
 	if kind == "guard":
 		sfx.play("whistle"); say("Стой!", "ru", 0.6, 1.0)
@@ -1295,17 +1406,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_M: toggle_mute()
-			KEY_G: set_quality(not hq)
+			KEY_G: set_quality(not hq); save.hq = 1 if hq else 0; write_save(); aq.done = true
 			KEY_P:
 				if state == "play" or photo:
 					photo = not photo; photo_t = 0.0; hud.set_hud_visible(not photo)
 			KEY_SPACE, KEY_ENTER:
-				if state == "menu" and hud.card_open("menu"): start_game()
-				elif state == "menu" and hud.card_open("help"): hud.show_card("menu")
-				elif state == "intro": end_cutscene()
-				elif state == "levelDone" and hud.card_open("done"): next_level()
-				elif state == "over" and hud.card_open("over"): retry()
-				elif state == "won" and hud.card_open("win"): start_game()
+				act_pressed()
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			dragging = event.pressed
@@ -1320,6 +1426,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		cam_pitch = clampf(cam_pitch + event.relative.y * 0.004, 0.15, 1.2)
 	elif event is InputEventScreenDrag:
 		cam_yaw -= event.relative.x * 0.006; manual_cam = 2.0
+
+## Space / Enter / the touch OK button.
+func act_pressed() -> void:
+	if state == "crane": crane_lower()
+	elif state == "menu" and hud.card_open("menu"): start_game()
+	elif state == "menu" and hud.card_open("help"): hud.show_card("menu")
+	elif state == "intro": end_cutscene()
+	elif state == "levelDone" and hud.card_open("done"): next_level()
+	elif state == "over" and hud.card_open("over"): retry()
+	elif state == "won" and hud.card_open("win"): start_game()
 
 func key(k: Key) -> bool:
 	return Input.is_physical_key_pressed(k)
@@ -1373,6 +1489,7 @@ func anim_oleg(delta: float, amt: float) -> void:
 	o.root.visible = not (P.inv > 0 and int(clock_t * 10) % 2 == 1 and state == "play")
 
 func _process(delta: float) -> void:
+	raw_delta = delta
 	delta = minf(delta, 0.05)
 	clock_t += delta
 	if state == "menu":
@@ -1383,22 +1500,29 @@ func _process(delta: float) -> void:
 		return
 	var L: Dictionary = LEVELS[li]
 	var fx = -sin(cam_yaw); var fz = -cos(cam_yaw); var rx = cos(cam_yaw); var rz = -sin(cam_yaw)
+	if state == "crane":
+		level_t += delta; update_crane(delta)
 	if state == "play" and not photo:
-		play_t += delta
-		var ix = (1.0 if key(KEY_D) or key(KEY_RIGHT) else 0.0) - (1.0 if key(KEY_A) or key(KEY_LEFT) else 0.0)
-		var iz = (1.0 if key(KEY_W) or key(KEY_UP) else 0.0) - (1.0 if key(KEY_S) or key(KEY_DOWN) else 0.0)
+		play_t += delta; level_t += delta
+		var ix = (1.0 if key(KEY_D) or key(KEY_RIGHT) else 0.0) - (1.0 if key(KEY_A) or key(KEY_LEFT) else 0.0) + hud.joy.x
+		var iz = (1.0 if key(KEY_W) or key(KEY_UP) else 0.0) - (1.0 if key(KEY_S) or key(KEY_DOWN) else 0.0) + hud.joy.y
 		if key(KEY_Q): cam_yaw += 2.0 * delta; manual_cam = 2.0
 		if key(KEY_E): cam_yaw -= 2.0 * delta; manual_cam = 2.0
 		manual_cam = maxf(0.0, manual_cam - delta)
 		var mx = fx * iz + rx * ix; var mz = fz * iz + rz * ix; var ml = Vector2(mx, mz).length()
 		if ml > 1.0:
 			mx /= ml; mz /= ml
-		var run = key(KEY_SHIFT); var sp = 7.0 if run else 4.2
+		var run = key(KEY_SHIFT) or Input.is_action_pressed("touch_run"); var sp = 7.0 if run else 4.2
 		P.moving = ml > 0.1
 		if P.moving:
 			P.x += mx * sp * delta; P.z += mz * sp * delta
 			var d = atan2(mx, mz) - P.face; d = atan2(sin(d), cos(d)); P.face += d * minf(1.0, 12.0 * delta)
 			P.walk += delta * (11.0 if run else 7.5)
+			var sph = int(P.walk / PI)
+			if sph != step_phase:
+				step_phase = sph
+				var hard = li == 2 or (P.z < -5 and P.z > -30) or (absf(P.x) < 3.2 and P.z > -6 and P.z < 34)
+				sfx.play("step_hard" if hard else "step_soft", -8.0 if run else -11.0, randf_range(0.85, 1.15))
 			# camera follows behind Oleg (no mouse needed); never swings round when walking backwards
 			if manual_cam <= 0.0 and iz > -0.1:
 				var dy = (P.face + PI) - cam_yaw; dy = atan2(sin(dy), cos(dy))
@@ -1414,6 +1538,9 @@ func _process(delta: float) -> void:
 			if it.got: continue
 			if Vector2(P.x - it.x, P.z - it.z).length() < 1.6:
 				it.got = true; it.grp.visible = false; P.carry += 1; sfx.play("pick")
+				radio("pick", "Хорошо! Неси на стройку.", "Good work! Carry it to the construction site. The arrow at the top shows the way.")
+				if items.all(func(q): return q.got):
+					radio("all", "Всё собрано! Иди к стройке.", "That's everything! Head to the construction site.", 2.5)
 				pop_text(Vector3(it.x, it.y + 2, it.z), "+1 " + it.type.ru, it.type.en, C(it.type.c))
 				burst(Vector3(it.x, it.y + 1, it.z), 14, [0xffd27a, 0xffffff], 3, 0.7, 0.08); update_hud()
 		for t in tokens:
@@ -1431,6 +1558,7 @@ func _process(delta: float) -> void:
 				for k in mini(n, cur.size()):
 					cur[k].queued = true; queue.append(cur[k])
 				sfx.play("deposit"); P.cp = Vector2(PAD.x, PAD.y + 1.5)
+				radio("dep", "Отлично! Кран работает.", "Excellent! The crane is lifting your materials into place.", 1.5)
 				pop_text(Vector3(PAD.x, 2.8, PAD.y), "Спасибо, товарищ!", "Thank you, comrade!", C(0xe8c35a)); update_hud()
 		# radiation
 		rad_rate = 0.0
@@ -1441,6 +1569,7 @@ func _process(delta: float) -> void:
 		if rad_rate > 0.45: P.dose += rad_rate * 20.0 * delta
 		else: P.dose = maxf(0.0, P.dose - (2.0 if rad_rate > 0.05 else 7.0) * delta)
 		if P.dose >= 100.0: hurt("rad")
+		if P.dose > 45.0: radio("dose", "Олег, доза растёт! Уходи оттуда!", "Oleg, your dose is rising! Get out of the green glow!")
 		if randf() < (0.6 + rad_rate * 35.0) * delta:
 			sfx.play("click", -4.0, randf_range(0.8, 1.3)); hud.flash_led()
 		# guards
@@ -1463,6 +1592,7 @@ func _process(delta: float) -> void:
 			var px: float = P.x - g.x; var pz: float = P.z - g.z; var pd = Vector2(px, pz).length()
 			var ang: float = atan2(px, pz) - g.face; ang = absf(atan2(sin(ang), cos(ang)))
 			var seen: bool = (pd < g.VR and ang < g.HA) or pd < 1.2
+			if pd < 13.0: radio("guard", "Осторожно, патруль рядом.", "Careful, a patrol is nearby. Stay out of the flashlight beam!")
 			g.cone_m.albedo_color = C(0xff4a3a, 0.3) if seen else C(0xfff0a0, 0.16)
 			if seen and P.inv <= 0 and state == "play":
 				pop_text(Vector3(g.x, h(g.x, g.z) + 2.8, g.z), "СТОЙ!", "Halt!", C(0xff6a5a)); hurt("guard")
@@ -1483,45 +1613,45 @@ func _process(delta: float) -> void:
 		update_debris(delta); update_traps(delta)
 		# compass
 		var left = items.filter(func(i): return not i.got)
-		var tx = PAD.x; var tz = PAD.y; var lbl = "Стройка · Construction site"
+		var tx = PAD.x; var tz = PAD.y; var lbl = "Стройка · Construction site"; var ccol = C(0xd9a441); var cicon = "site"
 		var remaining = need - built - queue.size() - anims.size()
 		if not (P.carry > 0 and (left.is_empty() or P.carry >= remaining)) and not left.is_empty():
 			var best = null; var bd = 1e9
 			for it in left:
 				var d = Vector2(it.x - P.x, it.z - P.z).length()
 				if d < bd: bd = d; best = it
-			tx = best.x; tz = best.z; lbl = "%s · %s (%d м)" % [best.type.ru, best.type.en, int(bd)]
+			tx = best.x; tz = best.z; lbl = "%s · %s (%d м)" % [best.type.ru, best.type.en, int(bd)]; ccol = C(best.type.c); cicon = best.type.id
 			if P.carry > 0: lbl += "  ·  or deliver to the site"
 		var dx2 = tx - P.x; var dz2 = tz - P.z
-		hud.set_compass(atan2(dx2 * rx + dz2 * rz, dx2 * fx + dz2 * fz), lbl)
+		hud.set_compass(atan2(dx2 * rx + dz2 * rz, dx2 * fx + dz2 * fz), lbl, ccol, cicon)
 		var v = 0.12 + rad_rate * 48.0
 		hud.set_detector(v, rad_rate > 0.45, -70.0 + 140.0 * clampf(log(v / 0.1) / log(6000.0), 0.0, 1.0) + sin(clock_t * 30) * rad_rate * 2.0, P.dose, rad_rate)
 	# building animation
-	if not queue.is_empty():
+	if not queue.is_empty() and state == "play":
 		queue_t -= delta
 		if queue_t <= 0:
-			queue_t = 0.6; var pc: Dictionary = queue.pop_front(); pc.n.visible = true; pc.n.position.y = pc.target.y + 22; anims.append({"pc": pc, "t": 0.0})
+			queue_t = 0.6; var pc: Dictionary = queue.pop_front()
+			if pc.d.k == "roof":
+				start_crane(pc)
+			else:
+				pc.n.visible = true; pc.n.position.y = pc.target.y + 22; anims.append({"pc": pc, "t": 0.0})
 	for k in range(anims.size() - 1, -1, -1):
 		var a: Dictionary = anims[k]; a.t += delta / 0.9; var e = minf(1.0, a.t)
 		a.pc.n.position.y = a.pc.target.y + 22.0 * (1.0 - e * e)
 		if a.t >= 1.0:
-			a.pc.n.position = a.pc.target; anims.remove_at(k); built += 1; sfx.play("thud"); shake = maxf(shake, 0.35)
-			burst(a.pc.target, 22, [0x9a968c, 0xbab6ac, 0x7a766e], 5, 1.1, 0.22, 3)
-			if a.pc.stub:
-				burst(a.pc.target + Vector3(0, 0, 1), 20, [0x8a867e, 0xbab6ac], 6, 1.2, 0.25, 3)
-				a.pc.stub.queue_free(); a.pc.stub = null
-			smoke_target = 1.0 - (STAGE_START[li] + built) / TOTAL_PIECES * 0.92
-			update_hud()
-			if built >= need: done_t = 1.6
+			anims.remove_at(k); land_piece(a.pc)
 	if done_t > 0 and state == "play":
 		done_t -= delta
 		if done_t <= 0: level_complete()
 	if state == "won": update_win(delta)
-	if state == "levelDone" or state == "over": anim_oleg(delta, 0)
+	if state == "levelDone" or state == "over" or state == "crane": anim_oleg(delta, 0)
 	ambient(delta)
 	if photo:
 		photo_t += delta; var pa = 0.6 + photo_t * 0.12
 		cam.position = Vector3(-6 + sin(pa) * 62, 26 + sin(photo_t * 0.2) * 8, -37 + cos(pa) * 62); cam.look_at(Vector3(-6, 22, -37))
+	elif state == "crane" and crane_pc != null:
+		var t3: Vector3 = crane_pc.target
+		cam.position = cam.position.lerp(Vector3(t3.x + 2, t3.y + 34, t3.z + 30), minf(1.0, 2.5 * delta)); cam.look_at(Vector3(t3.x, t3.y, t3.z - 2))
 	elif state != "won":
 		var tgt = Vector3(P.x, P.y + 1.5, P.z)
 		var want = tgt + Vector3(sin(cam_yaw) * cos(cam_pitch), sin(cam_pitch), cos(cam_yaw) * cos(cam_pitch)) * cam_dist
@@ -1529,6 +1659,129 @@ func _process(delta: float) -> void:
 		cam.position = cam.position.lerp(want, minf(1.0, 8.0 * delta)); cam.look_at(tgt)
 	if shake > 0:
 		shake -= delta; cam.position += Vector3(randf() - 0.5, randf() - 0.5, 0) * shake * 0.8
+
+func land_piece(pc: Dictionary) -> void:
+	pc.n.position = pc.target; built += 1; sfx.play("thud"); shake = maxf(shake, 0.35)
+	burst(pc.target, 22, [0x9a968c, 0xbab6ac, 0x7a766e], 5, 1.1, 0.22, 3)
+	if pc.stub:
+		burst(pc.target + Vector3(0, 0, 1), 20, [0x8a867e, 0xbab6ac], 6, 1.2, 0.25, 3)
+		pc.stub.queue_free(); pc.stub = null
+	smoke_target = 1.0 - (STAGE_START[li] + built) / TOTAL_PIECES * 0.92
+	update_hud()
+	if built >= need: done_t = 1.6
+
+# ------------------------------------------------------------ crane mini-game (roof slabs, level 3)
+func start_crane(pc: Dictionary) -> void:
+	state = "crane"; crane_pc = pc; pc.n.visible = true
+	var t: Vector3 = pc.target
+	crane_hook = Vector2(t.x + R(-6, 6), t.z + 9.0); crane_vel = Vector2.ZERO; crane_sway = Vector2.ZERO
+	crane_drop = -1.0; crane_y = t.y + 9.0; crane_slab_y = crane_y
+	crane_outline.position = t; crane_outline.visible = true
+	hud.set_act_text("DROP")
+	hud.show_msg("КРАН!  ·  CRANE TIME!", "Steer the roof slab with WASD / arrows (or the joystick). Press SPACE to lower it onto the green outline.", 6.0)
+	radio("crane", "Теперь ты на кране, Олег!", "You're on the crane now, Oleg! Line the slab up with the green outline, then lower it.", 0.5)
+
+func crane_lower() -> void:
+	if crane_pc != null and crane_drop < 0.0:
+		crane_drop = 0.0; sfx.play("creak", -2.0, 0.8)
+
+func update_crane(delta: float) -> void:
+	if crane_pc == null:
+		return
+	var t: Vector3 = crane_pc.target
+	if crane_drop < 0.0:
+		var ix = (1.0 if key(KEY_D) or key(KEY_RIGHT) else 0.0) - (1.0 if key(KEY_A) or key(KEY_LEFT) else 0.0) + hud.joy.x
+		var iz = (1.0 if key(KEY_W) or key(KEY_UP) else 0.0) - (1.0 if key(KEY_S) or key(KEY_DOWN) else 0.0) + hud.joy.y
+		var want = Vector2(ix, -iz).limit_length(1.0) * 6.5
+		var acc = (want - crane_vel) * minf(1.0, 3.5 * delta)
+		crane_vel += acc
+		crane_hook += crane_vel * delta
+		crane_hook.x = clampf(crane_hook.x, t.x - 14, t.x + 14); crane_hook.y = clampf(crane_hook.y, t.z - 14, t.z + 16)
+		crane_sway = crane_sway.lerp(-crane_vel * 0.14, minf(1.0, 1.6 * delta)) + Vector2(sin(clock_t * 2.1), cos(clock_t * 1.7)) * 0.004
+		crane_slab_y = lerpf(crane_slab_y, crane_y, minf(1.0, 3.0 * delta))
+		crane_creak -= delta
+		if crane_vel.length() > 1.5 and crane_creak <= 0.0:
+			crane_creak = 1.4; sfx.play("creak", -12.0, randf_range(0.8, 1.1))
+	else:
+		crane_drop += delta / 1.1
+		crane_slab_y = lerpf(crane_y, t.y, minf(1.0, crane_drop * crane_drop))
+		crane_sway = crane_sway.lerp(Vector2.ZERO, minf(1.0, 0.8 * delta))
+	var sx = crane_hook.x + crane_sway.x; var sz = crane_hook.y + crane_sway.y
+	crane_pc.n.position = Vector3(sx, crane_slab_y, sz)
+	crane_outline.material_override.albedo_color.a = 0.18 + 0.12 * sin(clock_t * 5.0)
+	if not crane.is_empty():
+		var cg: Node3D = crane.g
+		var cv = Vector2(crane_hook.x - cg.position.x, crane_hook.y - cg.position.z)
+		var want_r = atan2(cv.y, -cv.x); var dr = want_r - crane.top.rotation.y; dr = atan2(sin(dr), cos(dr))
+		crane.top.rotation.y += dr * minf(1.0, 3.0 * delta)
+		crane_cable.clear_surfaces(); crane_cable.surface_begin(Mesh.PRIMITIVE_LINES)
+		for o in [Vector2(-2.6, -7.5), Vector2(2.6, -7.5), Vector2(-2.6, 7.5), Vector2(2.6, 7.5)]:
+			crane_cable.surface_add_vertex(Vector3(sx + o.x, crane_slab_y + 0.4, sz + o.y)); crane_cable.surface_add_vertex(Vector3(sx, crane_slab_y + 5.0, sz))
+		crane_cable.surface_add_vertex(Vector3(sx, crane_slab_y + 5.0, sz)); crane_cable.surface_add_vertex(Vector3(sx, cg.position.y + 46.0, sz))
+		crane_cable.surface_end()
+	if crane_drop >= 1.0:
+		var err = Vector2(sx - t.x, sz - t.z).length()
+		if err < 1.2:
+			var pc: Dictionary = crane_pc; crane_pc = null; crane_outline.visible = false; crane_cable.clear_surfaces()
+			land_piece(pc); state = "play"; hud.set_act_text("OK")
+			hud.show_msg("ОТЛИЧНО!  ·  PERFECT!", "The roof slab is in place.", 2.2)
+		else:
+			crane_drop = -1.0; sfx.play("thud", -6.0, 1.3); shake = maxf(shake, 0.2)
+			hud.show_msg("МИМО!  ·  MISSED!", "Line the slab up with the green outline and try again.", 2.5)
+
+# ------------------------------------------------------------ Pripyat landmarks (level 2)
+func pripyat_landmarks() -> void:
+	# School No. 3: a long three-storey school
+	var sx = 28.0; var sz = 20.0
+	B(world, facade2_mat, sx, h(sx, sz) + 5.0, sz, 24, 10, 9); B(world, Mk.lam(0x4a4844), sx, h(sx, sz) + 10.15, sz, 24.4, 0.3, 9.4)
+	B(world, facade_mat, sx, h(sx, sz) + 6.0, sz + 5.2, 6, 12, 2); B(world, Mk.lam(0x1e2428), sx, h(sx, sz) + 1.4, sz + 6.25, 2.4, 2.8, 0.1)
+	var sl = Label3D.new(); sl.text = "ШКОЛА № 3\nSCHOOL No. 3"; sl.font_size = 96; sl.pixel_size = 0.012; sl.modulate = C(0x2a2a2a); sl.outline_size = 0
+	sl.font = hud.head_font; sl.position = Vector3(sx, h(sx, sz) + 9.2, sz + 6.26); world.add_child(sl)
+	for k in 6:
+		B(world, Mk.lam(pick([0x7a766e, 0x5a5650])), sx + R(-10, 10), h(sx, sz) + 0.3, sz + R(5, 8), R(0.5, 1.2), R(0.3, 0.8), R(0.5, 1.2)).rotation.y = R(0, 3)
+	add_box_col(sx, sz, 24, 9); add_box_col(sx, sz + 5.2, 6, 2); reserved.append(Vector3(sx, sz + 8.0, 4.0))
+	# Hotel Polesie with the big letters on the roof
+	var hx = -38.0; var hz = 16.0; var hy = h(hx, hz)
+	B(world, facade2_mat, hx, hy + 11.0, hz, 18, 22, 10); B(world, Mk.lam(0x4a4844), hx, hy + 22.15, hz, 18.4, 0.3, 10.4)
+	for k in 4:
+		B(world, Mk.lam(0x5a5c5e), hx - 6 + k * 4, hy + 23.2, hz + 4.5, 0.12, 2.0, 0.12)
+	var hl = Label3D.new(); hl.text = "ПОЛІССЯ"; hl.font_size = 220; hl.pixel_size = 0.016; hl.modulate = C(0xc8322a); hl.outline_size = 0
+	hl.font = hud.head_font; hl.position = Vector3(hx, hy + 24.3, hz + 4.6); world.add_child(hl)
+	var hl2 = Label3D.new(); hl2.text = "HOTEL POLESIE"; hl2.font_size = 80; hl2.pixel_size = 0.012; hl2.modulate = C(0x2a2a2a); hl2.outline_size = 0
+	hl2.font = hud.head_font; hl2.position = Vector3(hx, hy + 3.4, hz + 5.06); world.add_child(hl2)
+	add_box_col(hx, hz, 18, 10)
+	# the amusement park you can walk through: Ferris wheel and bumper cars
+	var fx2 = -34.0; var fz2 = 42.0
+	var g = Node3D.new(); g.position = Vector3(fx2, h(fx2, fz2), fz2); g.rotation.y = 0.25; world.add_child(g)
+	var yel = pbr(0xc9a227, 0.55, 0.3); var rust = Mk.lam(0x6a5a3a)
+	for s in [-1, 1]:
+		var tm = TorusMesh.new(); tm.inner_radius = 10.8; tm.outer_radius = 11.2; tm.rings = 48; tm.ring_segments = 6
+		Mk.mi(g, tm, yel, Vector3(0, 13, s)).rotation.x = PI / 2
+		Mk.cyl_between(g, Vector3(-6, 0, s * 2.5), Vector3(0, 13, s), 0.3, rust); Mk.cyl_between(g, Vector3(6, 0, s * 2.5), Vector3(0, 13, s), 0.3, rust)
+	Mk.cyl_between(g, Vector3(0, 13, -1.2), Vector3(0, 13, 1.2), 0.5, rust)
+	for k in 12:
+		var a = k / 12.0 * TAU; var p = Vector3(cos(a) * 11, 13 + sin(a) * 11, 0)
+		Mk.cyl_between(g, Vector3(0, 13, 0), p, 0.08, yel)
+		var cab = Node3D.new(); cab.position = p - Vector3(0, 1.1, 0); g.add_child(cab)
+		B(cab, pbr(0xd9b43a, 0.6), 0, 0, 0, 1.4, 0.9, 1.4); B(cab, pbr(0xc0392b, 0.6), 0, 0.7, 0, 1.6, 0.15, 1.6)
+	var bs = Basis(Vector3.UP, 0.25)
+	for lp in [Vector3(-6, 0, -2.5), Vector3(6, 0, -2.5), Vector3(-6, 0, 2.5), Vector3(6, 0, 2.5)]:
+		var w = g.position + bs * lp; circles.append(Vector3(w.x, w.z, 0.5))
+	reserved.append(Vector3(fx2, fz2, 8.0))
+	var bx2 = -16.0; var bz2 = 33.0; var by2 = h(bx2, bz2)
+	B(world, Mk.lam(0x2a2a2c), bx2, by2 + 0.1, bz2, 12, 0.2, 9)
+	B(world, pbr(0x3f6f8a, 0.7), bx2, by2 + 4.2, bz2, 12.6, 0.35, 9.6)
+	for p in [Vector2(-6, -4.5), Vector2(6, -4.5), Vector2(-6, 4.5), Vector2(6, 4.5), Vector2(0, -4.5), Vector2(0, 4.5)]:
+		Mk.mi(world, Mk.CYL, rust, Vector3(bx2 + p.x, by2 + 2.1, bz2 + p.y), Vector3(0.12, 4.2, 0.12)); circles.append(Vector3(bx2 + p.x, bz2 + p.y, 0.25))
+	for k in 6:
+		var c = Node3D.new(); c.position = Vector3(bx2 + R(-4.5, 4.5), by2 + 0.45, bz2 + R(-3, 3)); c.rotation.y = R(0, 6); world.add_child(c)
+		var col = pbr(pick([0xc0392b, 0x2e7dbf, 0xd9a41e, 0x3e9a4a]), 0.5, 0.2)
+		Mk.mi(c, Mk.cap(0.6, 1.9), col, Vector3.ZERO, Vector3(1, 0.45, 1)).rotation.z = PI / 2
+		Mk.mi(c, Mk.CYL, Mk.lam(0x1a1a1a), Vector3(0, -0.15, 0), Vector3(0.85, 0.12, 0.65))
+		Mk.mi(c, Mk.CYL, Mk.lam(0x555555), Vector3(0.5, 1.6, 0), Vector3(0.03, 2.4, 0.03))
+	var pl = Label3D.new(); pl.text = "ПАРК · PARK"; pl.font_size = 90; pl.pixel_size = 0.012; pl.modulate = C(0xf0c040); pl.font = hud.head_font
+	pl.outline_size = 10; pl.position = Vector3(bx2, by2 + 4.9, bz2 + 4.9); world.add_child(pl)
+	reserved.append(Vector3(bx2, bz2, 7.5))
 
 func spawn_debris(x: float, z: float) -> void:
 	var y = h(x, z)
@@ -1604,6 +1857,7 @@ func ambient(delta: float) -> void:
 		crane.top.rotation.y = sin(clock_t * 0.08) * 0.45
 	update_smoke(delta)
 	if dust: dust.position = Vector3(P.x, P.y + 3, P.z)
+	if weather: weather.position = Vector3(P.x, P.y + (16.0 if li == 1 else 12.0), P.z)
 	plight.position = Vector3(P.x, P.y + 3, P.z)
 	clouds.position = cam.position; clouds.rotation.y += delta * 0.004
 	for k in range(pops.size() - 1, -1, -1):
@@ -1628,6 +1882,14 @@ func hero_pose() -> void:
 
 func hero_menu(delta: float) -> void:
 	menu_t += delta
+	# school mode: if this computer is slow, switch to low graphics automatically
+	if not aq.done and menu_t > 2.0:
+		aq.t += raw_delta; aq.n += 1
+		if aq.t >= 4.0:
+			aq.done = true
+			if hq and aq.n / aq.t < 28.0:
+				set_quality(false)
+				hud.show_msg("School mode", "Low graphics turned on for this computer. Press G to switch back.", 4.0)
 	hero_pose()
 	var f = Vector2(sin(P.face), cos(P.face)); var right = Vector2(-f.y, f.x)
 	var sway = sin(menu_t * 0.12)
@@ -1672,6 +1934,7 @@ void fragment() {
 # ============================================================ cutscene
 func update_cutscene(delta: float) -> void:
 	cut.t += delta; var T = 7.5; var t: float = cut.t
+	hud.set_title_alpha(clampf((t - 0.5) / 1.0, 0.0, 1.0) * clampf((5.6 - t) / 1.0, 0.0, 1.0))
 	if t < T:
 		var u = 1.0 - pow(1.0 - t / T, 2); var n = PATH.size() - 1; var f = u * n; var i = mini(n - 1, int(f)); var k = f - i
 		var a: Vector2 = PATH[i]; var b: Vector2 = PATH[i + 1]
@@ -1702,14 +1965,26 @@ func update_cutscene(delta: float) -> void:
 		if t > T + 4.2: end_cutscene()
 
 # ============================================================ level complete / win
+func level_stars() -> int:
+	return 1 + (1 if lost_level == 0 else 0) + (1 if level_t <= PAR[li] else 0)
+
+func star_text() -> String:
+	var s = int(level_t)
+	return "Level complete   ·   %s   ·   Time %d:%02d %s" % ["No lives lost" if lost_level == 0 else "Lives lost: %d" % lost_level, s / 60, s % 60,
+		"(under %d:%02d!)" % [int(PAR[li]) / 60, int(PAR[li]) % 60] if level_t <= PAR[li] else "(beat %d:%02d for a star)" % [int(PAR[li]) / 60, int(PAR[li]) % 60]]
+
 func level_complete() -> void:
 	if li < LEVELS.size() - 1:
 		state = "levelDone"; sfx.play("fanfare"); P.cheer = 2.0; var L: Dictionary = LEVELS[li]
 		hud.show_msg(L.done_ru, L.done_en, 2.0)
+		var st = level_stars()
+		save.unlocked = maxi(int(save.unlocked), li + 1); save.stars[li] = maxi(int(save.stars[li]), st); write_save()
 		await get_tree().create_timer(1.8).timeout
-		hud.set_card_text("done", L.done_ru, "Excellent work, comrade! " + L.done_en, L.done_txt); hud.show_card("done")
+		hud.set_card_text("done", L.done_ru, "Excellent work, comrade! " + L.done_en, L.done_txt + "\n\n" + star_text() + "\n\nDID YOU KNOW?\n" + LEVEL_FACTS[li])
+		hud.set_card_stars("done", st); hud.show_card("done")
 	else:
 		state = "won"; won_t = 0.0; P.cheer = 99.0; sfx.music_on = false
+		var st = level_stars(); save.unlocked = 2; save.stars[2] = maxi(int(save.stars[2]), st); write_save(); hud.set_card_stars("win", st)
 		if march.stream:
 			march.volume_db = -2.0; march.play()
 		else:
@@ -1739,5 +2014,5 @@ func update_win(delta: float) -> void:
 	if won_t > 5.5 and not hud.card_open("win"):
 		var s = int(play_t)
 		hud.set_card_text("win", "ТЫ НАСТОЯЩИЙ ГЕРОЙ, ТОВАРИЩ!", "You are a real hero, comrade!",
-			"Энергоблок №4 восстановлен!\nBlock No. 4 has been rebuilt and the smoke has stopped.\nOleg earns the medal \"Hero of Labour\"!\n\nВремя · Time: %d:%02d" % [s / 60, s % 60])
+			"Энергоблок №4 восстановлен!\nBlock No. 4 has been rebuilt and the smoke has stopped.\nOleg earns the medal \"Hero of Labour\"!\n\nTotal time %d:%02d   ·   Stars earned: %d / 9\n\nDID YOU KNOW?\n%s" % [s / 60, s % 60, total_stars(), LEVEL_FACTS[2]])
 		hud.show_card("win")
