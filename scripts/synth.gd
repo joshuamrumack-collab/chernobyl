@@ -28,7 +28,7 @@ func _ready() -> void:
 	b = _buf(0.75); _whistle(b); _make("whistle", b)
 	b = _buf(0.45); _tone(b, 0, 300, 0.4, "tri", 0.5, 90); _make("hurt", b)
 	b = _buf(0.35); _noise(b, 0, 0.25, 0.4, 0.4); _tone(b, 0, 700, 0.3, "sine", 0.15, 200); _make("pop", b)
-	b = _buf(0.02); _noise(b, 0, 0.012, 1.0, 1.0, true); _make("click", b, 8)
+	b = _buf(0.03); _noise(b, 0, 0.014, 1.6, 0.35, true); _tone(b, 0, 3200, 0.01, "sq", 0.25); _make("click", b, 8)
 	wind = AudioStreamPlayer.new(); wind.stream = _wind(); wind.volume_db = -9.0; add_child(wind); wind.play()
 	drone = AudioStreamPlayer.new(); drone.stream = _drone(); drone.volume_db = -13.0; add_child(drone); drone.play()
 
