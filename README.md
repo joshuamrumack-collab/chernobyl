@@ -17,7 +17,7 @@ The game opens on a hero shot: Oleg stands on the hill beside a waving Soviet fl
 |---|---|
 | W A S D / arrow keys | Walk |
 | Shift | Run |
-| Q / E, or drag with the mouse | Turn the camera |
+| Q / E, or drag with the mouse | Turn the camera (optional: it follows Oleg by itself) |
 | Mouse wheel | Zoom |
 | Space / Enter | Start, skip the intro, continue |
 | M | Sound on / off |

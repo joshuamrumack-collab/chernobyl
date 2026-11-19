@@ -125,6 +125,7 @@ var cam_pitch := 0.42
 var cam_dist := 10.0
 var dragging := false
 var photo := false
+var manual_cam := 0.0
 var photo_t := 0.0
 var P := {"x": 0.0, "z": 0.0, "y": 0.0, "face": PI, "walk": 0.0, "inv": 0.0, "carry": 0, "dose": 0.0, "cp": Vector2.ZERO, "moving": false, "cheer": 0.0}
 
@@ -1315,10 +1316,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			cam_dist = clampf(cam_dist + 0.8, 6, 18)
 	elif event is InputEventMouseMotion and dragging:
-		cam_yaw -= event.relative.x * 0.006
+		cam_yaw -= event.relative.x * 0.006; manual_cam = 2.0
 		cam_pitch = clampf(cam_pitch + event.relative.y * 0.004, 0.15, 1.2)
 	elif event is InputEventScreenDrag:
-		cam_yaw -= event.relative.x * 0.006
+		cam_yaw -= event.relative.x * 0.006; manual_cam = 2.0
 
 func key(k: Key) -> bool:
 	return Input.is_physical_key_pressed(k)
@@ -1386,8 +1387,9 @@ func _process(delta: float) -> void:
 		play_t += delta
 		var ix = (1.0 if key(KEY_D) or key(KEY_RIGHT) else 0.0) - (1.0 if key(KEY_A) or key(KEY_LEFT) else 0.0)
 		var iz = (1.0 if key(KEY_W) or key(KEY_UP) else 0.0) - (1.0 if key(KEY_S) or key(KEY_DOWN) else 0.0)
-		if key(KEY_Q): cam_yaw += 2.0 * delta
-		if key(KEY_E): cam_yaw -= 2.0 * delta
+		if key(KEY_Q): cam_yaw += 2.0 * delta; manual_cam = 2.0
+		if key(KEY_E): cam_yaw -= 2.0 * delta; manual_cam = 2.0
+		manual_cam = maxf(0.0, manual_cam - delta)
 		var mx = fx * iz + rx * ix; var mz = fz * iz + rz * ix; var ml = Vector2(mx, mz).length()
 		if ml > 1.0:
 			mx /= ml; mz /= ml
@@ -1397,6 +1399,13 @@ func _process(delta: float) -> void:
 			P.x += mx * sp * delta; P.z += mz * sp * delta
 			var d = atan2(mx, mz) - P.face; d = atan2(sin(d), cos(d)); P.face += d * minf(1.0, 12.0 * delta)
 			P.walk += delta * (11.0 if run else 7.5)
+			# camera follows behind Oleg (no mouse needed); never swings round when walking backwards
+			if manual_cam <= 0.0 and iz > -0.1:
+				var dy = (P.face + PI) - cam_yaw; dy = atan2(sin(dy), cos(dy))
+				var rate = (0.9 + 0.9 * maxf(0.0, iz)) * (1.25 if run else 1.0)
+				cam_yaw += dy * minf(1.0, rate * delta)
+		if manual_cam <= 0.0:
+			cam_pitch = lerpf(cam_pitch, 0.42, minf(1.0, 0.8 * delta))
 		collide(); P.y = h(P.x, P.z)
 		if P.inv > 0: P.inv -= delta
 		anim_oleg(delta, minf(1.0, ml) if P.moving else 0.0)
