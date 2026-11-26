@@ -144,6 +144,7 @@ var crane_cable: ImmediateMesh
 var weather: CPUParticles3D
 var step_phase := 0
 var raw_delta := 0.016
+var egg := {}
 const PAR := [180.0, 240.0, 300.0]
 const SAVE_PATH := "user://chernobyl_save.json"
 const LOAD_FACTS := [
@@ -693,6 +694,170 @@ func build_stack(x: float, y0: float, z: float) -> void:
 		var a = k * PI / 2.0
 		blinkers.append(Mk.mi(world, Mk.SPH, bm, Vector3(x + cos(a) * 3.6, lv[5] + 0.6, z + sin(a) * 3.6), Vector3.ONE * 0.35))
 
+## Rubble, exposed floors, bent steel and graphite: what the real Block 4 looked like after the accident.
+func ruin_details(stage: int, steel: Material) -> void:
+	var conc = [0x8e8a82, 0x77746c, 0x5f5c56, 0x9d998f, 0x6b675f]
+	# exposed floor slabs behind the missing front panels (level 1)
+	if stage == 0:
+		for fy in [4.0, 8.0, 12.0]:
+			for i in 6:
+				var cx = -17.0 + 34.0 / 6.0 * (i + 0.5)
+				var sl = B(world, Mk.lam(0x8a867e), cx + R(-0.3, 0.3), fy + R(-0.2, 0.1), FRONT - 1.3, 34.0 / 6.0 - R(0.0, 1.2), 0.35, 1.6)
+				sl.rotation = Vector3(R(-0.12, 0.05), 0, R(-0.08, 0.08))
+		for k in 10:
+			var x0 = R(-16, 16)
+			Mk.cyl_between(world, Vector3(x0, R(3, 13), FRONT - 0.6), Vector3(x0 + R(-1, 1), R(1, 12), FRONT + R(0.3, 1.8)), 0.04, Mk.lam(0x6a4a30))
+	# bent steel columns along the open hall (levels 1-2)
+	if stage <= 1:
+		for cx in [-12.0, -8.0, -4.0, 0.0, 4.0, 8.0, 12.0]:
+			var hh = R(3, 13); var top = Vector3(cx + R(-1.2, 1.2), 16.4 + hh, -29.5 + R(-1.5, 1.0))
+			Mk.cyl_between(world, Vector3(cx, 16.4, -29.5), top, 0.22, steel)
+			if rng.randf() < 0.6:
+				Mk.cyl_between(world, top, top + Vector3(R(-2, 2), R(-3, 0.5), R(0.5, 2.5)), 0.16, steel)
+		for k in 6:
+			var a = Vector3(R(-12, 12), R(26, 30), R(-45, -30))
+			Mk.cyl_between(world, a, a + Vector3(R(-5, 5), R(-6, -1), R(-3, 3)), 0.18, steel)
+	# the refuelling crane fell into the reactor hall
+	var rc = B(world, pbr(0xc88a22, 0.6, 0.3), 1, 19.5, -38, 22, 1.4, 1.8); rc.rotation = Vector3(0.15, 0.35, 0.22)
+	B(world, pbr(0x8a5a1a, 0.6, 0.3), -6, 18.2, -35, 2.6, 2.2, 2.6).rotation = Vector3(0.3, 0.2, 0.5)
+	# the big rubble cascade down the front of the block, cleared a little more each level
+	var n = [460, 280, 150][stage] * (1 if hq else 0.6)
+	var mm = MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_colors = true; mm.mesh = Mk.BOX; mm.instance_count = int(n)
+	var reach = [9.0, 7.0, 5.0][stage]; var peak = [12.0, 8.0, 5.0][stage]
+	for k in int(n):
+		var x = R(4.5, 17.5); var d = pow(rng.randf(), 0.8) * reach
+		var hx = peak * pow(clampf(1.0 - absf(x - 11.5) / 7.5, 0.0, 1.0), 0.6)
+		var top = maxf(0.3, hx * (1.0 - d / reach))
+		var y = top * sqrt(rng.randf())
+		var sz = Vector3(R(0.4, 1.8), R(0.3, 1.1), R(0.4, 1.6))
+		var big = rng.randf() < 0.12
+		if big: sz = Vector3(R(2.0, 3.6), R(0.25, 0.4), R(1.2, 2.4))
+		var bs = Basis.from_euler(Vector3(R(-0.9, 0.9), R(0, 6), R(-0.9, 0.9))).scaled(sz)
+		mm.set_instance_transform(k, Transform3D(bs, Vector3(x, y, FRONT + d)))
+		var c = C(pick(conc))
+		if big: c = C(0xc4c0b6)
+		elif rng.randf() < 0.1: c = C(0x2c2c2e)
+		mm.set_instance_color(k, c)
+	var rm = StandardMaterial3D.new(); rm.vertex_color_use_as_albedo = true; rm.roughness = 0.95
+	var rn = MultiMeshInstance3D.new(); rn.multimesh = mm; rn.material_override = rm; world.add_child(rn)
+	var xc = 6.0
+	while xc <= 17.0:
+		circles.append(Vector3(xc, FRONT + 2.2, 2.4))
+		if reach > 6.0: circles.append(Vector3(xc, FRONT + 5.2, 1.6))
+		xc += 2.2
+	# rubble and debris on the roofs around the hall
+	var rr = MultiMesh.new(); rr.transform_format = MultiMesh.TRANSFORM_3D; rr.use_colors = true; rr.mesh = Mk.BOX; rr.instance_count = 160
+	for k in 160:
+		var spots = [[Vector2(-16, 16), Vector2(-29, -24.5), 16.3], [Vector2(-22, -12), Vector2(-44, -30), 24.3], [Vector2(12.5, 16.5), Vector2(-46, -29), 16.3], [Vector2(17.5, 24.5), Vector2(-49, -39), 12.3]]
+		var sp = spots[k % 4]
+		var bs2 = Basis.from_euler(Vector3(R(-0.6, 0.6), R(0, 6), R(-0.6, 0.6))).scaled(Vector3(R(0.3, 1.4), R(0.2, 0.8), R(0.3, 1.2)))
+		rr.set_instance_transform(k, Transform3D(bs2, Vector3(R(sp[0].x, sp[0].y), sp[2] + R(0, 0.5), R(sp[1].x, sp[1].y))))
+		rr.set_instance_color(k, C(pick(conc)) if rng.randf() < 0.8 else C(0x2c2c2e))
+	var rn2 = MultiMeshInstance3D.new(); rn2.multimesh = rr; rn2.material_override = rm; world.add_child(rn2)
+	# black graphite blocks from the reactor core, scattered on roofs and the ground
+	var gm = MultiMesh.new(); gm.transform_format = MultiMesh.TRANSFORM_3D; gm.mesh = Mk.BOX; var gcount = [90, 60, 40][stage]; gm.instance_count = gcount
+	for k in gcount:
+		var p = Vector3.ZERO
+		match k % 3:
+			0: p = Vector3(R(-30, 30), 0.3, R(-23, -9))
+			1: p = Vector3(R(-16, 16), 16.55, R(-29, -24.6))
+			_: p = Vector3(R(-60, 22), 14.6 if rng.randf() < 0.5 else 0.3, R(-23, -9))
+		if p.y < 1.0: p.y = h(p.x, p.z) + 0.25
+		gm.set_instance_transform(k, Transform3D(Basis.from_euler(Vector3(R(-0.4, 0.4), R(0, 6), R(-0.4, 0.4))).scaled(Vector3(0.5, 0.5, 1.1)), p))
+	var gmi = MultiMeshInstance3D.new(); gmi.multimesh = gm; gmi.material_override = pbr(0x232325, 0.45, 0.2); world.add_child(gmi)
+
+## Easter egg: a hidden room at the foot of the stair tower, with a door on its east side.
+func secret_room() -> void:
+	var wall = facade2_mat; var y0 = 0.0
+	B(world, wall, 20, 2.25, -24.3, 6, 4.5, 0.6); B(world, wall, 20, 2.25, -33.7, 6, 4.5, 0.6)
+	B(world, wall, 17.3, 2.25, -29, 0.6, 4.5, 10); B(world, wall, 22.7, 2.25, -32, 0.6, 4.5, 4); B(world, wall, 22.7, 2.25, -26, 0.6, 4.5, 4)
+	B(world, wall, 22.7, 3.9, -29, 0.6, 1.2, 2.0)
+	B(world, Mk.lam(0x3a3630), 20, 0.05, -29, 5.4, 0.1, 9.4)
+	var door = B(world, Mk.lam(0x5a3a26), 23.4, 1.6, -30.3, 0.12, 3.2, 1.6); door.rotation.y = -0.9
+	for p in [Vector2(24.6, -31.8), Vector2(24.4, -26.4), Vector2(25.6, -25.6)]:
+		B(world, Mk.lam(0x6a5032), p.x, h(p.x, p.y) + 0.5, p.y, 1.1, 1.0, 1.1).rotation.y = R(0, 1)
+	boxes.append(Rect2(17, -24.6, 6, 0.6)); boxes.append(Rect2(17, -34.0, 6, 0.6)); boxes.append(Rect2(17, -34.0, 0.6, 10))
+	boxes.append(Rect2(22.4, -34.0, 0.6, 4.0)); boxes.append(Rect2(22.4, -28.0, 0.6, 4.0))
+	reserved.append(Vector3(20, -29, 6.0))
+	var lamp = OmniLight3D.new(); lamp.light_color = C(0xffb060); lamp.omni_range = 7; lamp.light_energy = 1.6; lamp.position = Vector3(20, 3.6, -29); world.add_child(lamp)
+	Mk.mi(world, Mk.SPH, Mk.glow(C(0xffd080), false), Vector3(20, 4.1, -29), Vector3.ONE * 0.18)
+	# a blocky Napoleonic soldier and a (very friendly) blocky zombie, Roblox style
+	egg.soldier = blocky_figure(Vector3(18.4, y0, -31.2), false); egg.zombie = blocky_figure(Vector3(18.4, y0, -26.8), true)
+	var keg = Mk.mi(world, Mk.CYL, pbr(0x6b4a2a, 0.8), Vector3(21.7, 0.6, -33.0), Vector3(0.5, 1.2, 0.5))
+	for by in [0.25, 0.95]: Mk.mi(world, Mk.CYL, pbr(0x2a2a2a, 0.5, 0.6), Vector3(21.7, by, -33.0), Vector3(0.52, 0.08, 0.52))
+	var kl = Label3D.new(); kl.text = "BLACKPOWDER"; kl.font_size = 40; kl.pixel_size = 0.006; kl.modulate = C(0x111111); kl.outline_size = 0
+	kl.position = Vector3(21.7, 0.6, -32.47); kl.font = hud.head_font; world.add_child(kl)
+	Mk.mi(world, Mk.CYL, pbr(0xb3261e, 0.5), Vector3(21.6, 0.45, -25.4), Vector3(0.42, 0.5, 0.42))
+	Mk.mi(world, Mk.CYL, pbr(0xf0eee4, 0.5), Vector3(21.6, 0.72, -25.4), Vector3(0.43, 0.04, 0.43))
+	var flag = B(world, pbr(0x1d3a8a, 0.8), 17.7, 3.0, -30.2, 0.05, 1.1, 0.7); B(world, pbr(0xf2eee4, 0.8), 17.7, 3.0, -29.5, 0.05, 1.1, 0.7); B(world, pbr(0xc0241a, 0.8), 17.7, 3.0, -28.8, 0.05, 1.1, 0.7)
+	var sg = Label3D.new(); sg.text = "GUTS & BLACKPOWDER"; sg.font_size = 64; sg.pixel_size = 0.008; sg.modulate = C(0xc0241a)
+	sg.outline_size = 8; sg.outline_modulate = Color(0, 0, 0); sg.position = Vector3(17.66, 3.95, -29.5); sg.rotation.y = PI / 2; sg.font = hud.head_font; world.add_child(sg)
+
+func blocky_figure(pos: Vector3, zombie: bool) -> Dictionary:
+	var g = Node3D.new(); g.position = pos; g.rotation.y = PI / 2; world.add_child(g)
+	var skin = pbr(0x7fb36a if zombie else 0xf5cd30, 0.6); var coat = pbr(0x5a5a4a if zombie else 0x1d3a8a, 0.8)
+	var legs = pbr(0x6a6a58 if zombie else 0xf2eee4, 0.8)
+	var body = Node3D.new(); g.add_child(body)
+	B(body, legs, -0.24, 0.5, 0, 0.44, 1.0, 0.46); B(body, legs, 0.24, 0.5, 0, 0.44, 1.0, 0.46)
+	B(body, pbr(0x1a1a1a, 0.5), -0.24, 0.12, 0.04, 0.46, 0.24, 0.52); B(body, pbr(0x1a1a1a, 0.5), 0.24, 0.12, 0.04, 0.46, 0.24, 0.52)
+	B(body, coat, 0, 1.5, 0, 0.96, 1.0, 0.5)
+	if not zombie:
+		var belt = pbr(0xf2eee4, 0.8)
+		B(body, belt, 0, 1.5, 0.26, 0.12, 1.05, 0.02).rotation.z = 0.7; B(body, belt, 0, 1.5, 0.26, 0.12, 1.05, 0.02).rotation.z = -0.7
+		B(body, pbr(0xc0241a, 0.7), 0, 1.05, 0.26, 0.9, 0.12, 0.02)
+	else:
+		B(body, pbr(0x3a3a2e, 0.9), 0.2, 1.2, 0.26, 0.3, 0.25, 0.02)
+	var arms = []
+	for s in [-1, 1]:
+		var ap = Node3D.new(); ap.position = Vector3(s * 0.7, 1.95, 0); body.add_child(ap)
+		B(ap, coat, 0, -0.45, 0, 0.44, 0.95, 0.44); B(ap, skin, 0, -1.0, 0, 0.4, 0.18, 0.4)
+		arms.append(ap)
+	var head = Node3D.new(); head.position = Vector3(0, 2.32, 0); body.add_child(head)
+	var hm = CylinderMesh.new(); hm.top_radius = 0.32; hm.bottom_radius = 0.32; hm.height = 0.62; hm.radial_segments = 16
+	Mk.mi(head, hm, skin, Vector3.ZERO)
+	for s in [-1, 1]:
+		B(head, pbr(0x111111, 0.4), s * 0.11, 0.07, 0.31, 0.07, 0.11, 0.02)
+	B(head, pbr(0x111111, 0.4), 0, -0.1, 0.31, 0.22 if not zombie else 0.16, 0.04, 0.02)
+	if zombie:
+		B(head, pbr(0x111111, 0.4), 0.08, -0.14, 0.31, 0.06, 0.08, 0.02)
+	else:
+		var sh = CylinderMesh.new(); sh.top_radius = 0.33; sh.bottom_radius = 0.29; sh.height = 0.5; sh.radial_segments = 16
+		Mk.mi(head, sh, pbr(0x151515, 0.4), Vector3(0, 0.55, 0))
+		B(head, pbr(0xc49a3e, 0.3, 0.8), 0, 0.5, 0.3, 0.2, 0.18, 0.03)
+		Mk.mi(head, Mk.SPH, pbr(0xc0241a, 0.7), Vector3(0, 0.92, 0.05), Vector3(0.09, 0.18, 0.09))
+		Mk.mi(head, Mk.CYL, pbr(0x6b4a2a, 0.7), Vector3(0.62, 1.2, 0.1), Vector3(0.05, 1.9, 0.05))
+		Mk.mi(head, Mk.CYL, pbr(0x333333, 0.4, 0.7), Vector3(0.62, 1.9, 0.1), Vector3(0.03, 0.6, 0.03))
+	return {"g": g, "body": body, "arms": arms, "head": head, "zombie": zombie}
+
+func update_egg(delta: float) -> void:
+	if egg.is_empty() or not egg.has("soldier"):
+		return
+	var t = clock_t
+	for k in ["soldier", "zombie"]:
+		var f: Dictionary = egg[k]
+		if egg.get("party", 0.0) > 0.0:
+			f.body.position.y = absf(sin(t * 7.0 + (1.0 if f.zombie else 0.0))) * 0.35
+			f.arms[0].rotation.x = -2.6 + sin(t * 9.0) * 0.5; f.arms[1].rotation.x = -2.6 - sin(t * 9.0) * 0.5
+			f.head.rotation.y = sin(t * 5.0) * 0.4
+		else:
+			f.body.position.y = 0.0
+			f.arms[0].rotation.x = (-1.4 + sin(t * 2.0) * 0.1) if f.zombie else 0.0
+			f.arms[1].rotation.x = (-1.4 + cos(t * 2.0) * 0.1) if f.zombie else -0.2
+			f.head.rotation.y = sin(t * 0.8) * 0.2
+	if egg.get("party", 0.0) > 0.0:
+		egg.party -= delta
+	var inside = P.x > 17.6 and P.x < 22.4 and P.z > -33.4 and P.z < -24.6
+	egg.inside = inside
+	if inside and state == "play" and not egg.get("found_here", false):
+		egg.found_here = true; egg.party = 8.0
+		sfx.play("egg"); sfx.play("life", -4.0)
+		lives = mini(lives + 1, 8); update_hud()
+		burst(Vector3(20, 2.2, -29), 60, [0x1d3a8a, 0xf2eee4, 0xc0241a, 0xf5cd30], 6, 1.6, 0.12, 4)
+		pop_text(Vector3(20, 3.4, -29), "ПАСХАЛКА! · EASTER EGG!", "Guts & Blackpowder", C(0xf5cd30))
+		hud.show_msg("ПАСХАЛКА!  ·  EASTER EGG FOUND!", "A secret Guts & Blackpowder party in the stair tower! +1 life", 5.0)
+		if not save.get("egg", false):
+			save.egg = true; write_save()
+
 func build_reactor(stage: int) -> void:
 	pieces = []; blinkers = []
 	var roof = Mk.lam(0x4a4844); var dark = Mk.lam(0x161412); var steel = Mk.lam(0x3a3430)
@@ -706,6 +871,7 @@ func build_reactor(stage: int) -> void:
 		var hh = R(2, 7)
 		B(world, facade_mat, -10.5 + k * 3.5, 25 + hh / 2.0, -45.5, R(2, 3.6), hh, 1).rotation.z = R(-0.12, 0.12)
 	B(world, Mk.lam(0x2a2622), 0, 16.45, -37.5, 22, 0.3, 16)
+	ruin_details(stage, steel)
 	for k in 18:
 		var a = Vector3(R(-10, 10), 16.6, R(-44, -31))
 		Mk.cyl_between(world, a, a + Vector3(R(-4, 4), R(3, 12), R(-3, 3)), R(0.1, 0.22), steel)
@@ -723,14 +889,15 @@ func build_reactor(stage: int) -> void:
 	B(world, facade_mat, -40, 23, -37.5, 24, 14, 17); B(world, roof, -40, 30.25, -37.5, 24.4, 0.5, 17.4)
 	B(world, Mk.lam(0x9a968e), -46, 32, -40, 5, 3, 4); B(world, Mk.lam(0x9a968e), -34, 31.8, -34, 4, 2.5, 5)
 	# stair tower, side block, pipe gallery
-	B(world, facade2_mat, 20, 15, -29, 6, 30, 10); B(world, roof, 20, 30.2, -29, 6.3, 0.4, 10.3)
+	B(world, facade2_mat, 20, 17.25, -29, 6, 25.5, 10); B(world, roof, 20, 30.2, -29, 6.3, 0.4, 10.3)
+	secret_room()
 	var yy = 2.5
 	while yy < 29:
 		B(world, dark, 20, yy, -23.94, 1.4, 1.1, 0.1); yy += 2.4
 	B(world, facade_mat, 21, 6, -44, 8, 12, 12); B(world, roof, 21, 12.15, -44, 8.3, 0.3, 12.3)
-	var pg = Mk.lam(0x8a867e); B(world, pg, -6, 17.6, -49, 56, 2.4, 3)
-	for px in range(-30, 20, 6):
-		B(world, pg, px, 16.9, -49, 0.6, 1, 0.6)
+	B(world, facade2_mat, -20, 14, -51.5, 86, 28, 3.6); B(world, roof, -20, 28.2, -51.5, 86.4, 0.4, 4.0)
+	for px in range(-60, 22, 4):
+		B(world, Mk.lam(0x8a8780), px, 14, -49.65, 0.3, 28, 0.25)
 	# long turbine hall behind
 	B(world, facade2_mat, -10, 7, -63, 140, 14, 22); B(world, roof, -10, 14.2, -63, 140.4, 0.4, 22.4)
 	for px in range(-76, 60, 12):
@@ -748,7 +915,9 @@ func build_reactor(stage: int) -> void:
 		B(world, vent, vx, 17.0, -34.0 if vx < -20 else -44.0, 1.6, 1.4, 1.6); B(world, dk, vx, 17.75, -34.0 if vx < -20 else -44.0, 1.8, 0.12, 1.8)
 	for vx in range(-70, 55, 15):
 		B(world, vent, vx + 4.0, 15.2, -58.0, 2.0, 1.6, 2.0); Mk.mi(world, Mk.CYL, dk, Vector3(vx + 4.0, 16.4, -58.0), Vector3(0.5, 0.9, 0.5))
-	boxes.append(Rect2(-62, -76, 85.4, 76 + FRONT + 0.15))
+	boxes.append(Rect2(-62, -76, 79.0, 76 + FRONT + 0.15))
+	boxes.append(Rect2(17, -50, 8, 12))
+	boxes.append(Rect2(17, -53.5, 6, 4))
 	# the pieces to rebuild
 	for d in reactor_defs():
 		if d.s > stage:
@@ -1014,24 +1183,8 @@ func add_token(x: float, z: float) -> void:
 	tokens.append({"x": x, "z": z, "y": y, "grp": grp, "st": st, "got": false})
 
 func add_zone(x: float, z: float, r: float, s: float) -> void:
-	var top = h(x, z)
-	for a in 8:
-		top = maxf(top, h(x + cos(a) * r, z + sin(a) * r))
-	var pm = PlaneMesh.new(); pm.size = Vector2(r * 3, r * 3)
-	var dm = Mk.glow(C(0x8aff3a if s > 1.3 else 0x7dff4a, 0.6), true, glow_tex)
-	var disc = Mk.mi(world, pm, dm, Vector3(x, top + 0.12, z)); disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var rm = Mk.glow(C(0xc8ff6a, 0.45))
-	var ring = Mk.mi(world, Mk.disc_mesh(r + 0.12, r - 0.12, 48), rm, Vector3(x, top + 0.15, z)); ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var p = CPUParticles3D.new(); p.amount = 40; p.lifetime = 4.0; p.preprocess = 4.0
-	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX; p.emission_box_extents = Vector3(r * 0.7, 0.1, r * 0.7)
-	p.direction = Vector3.UP; p.spread = 10; p.initial_velocity_min = 0.4; p.initial_velocity_max = 1.0; p.gravity = Vector3(0, 0.1, 0)
-	var q = QuadMesh.new(); q.size = Vector2(0.5, 0.5); var qm = Mk.glow(C(0xaaff7a, 0.85), true, glow_tex); qm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	q.material = qm; p.mesh = q; p.position = Vector3(x, top, z); p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; world.add_child(p)
-	if s > 1.2:
-		var rk = StandardMaterial3D.new(); rk.albedo_color = C(0x2a3a20); rk.emission_enabled = true; rk.emission = C(0x5aff2a); rk.emission_energy_multiplier = 0.9
-		B(world, rk, x, top + 0.4, z, 1.1, 0.9, 1.0).rotation = Vector3(R(0, 3), R(0, 3), 0)
-	var a2 = R(0, 6.28); rad_sign(x + cos(a2) * (r + 0.9), z + sin(a2) * (r + 0.9))
-	zones.append({"x": x, "z": z, "r": r, "s": s, "dm": dm, "ring": ring, "ph": R(0, 6)})
+	# Radiation is invisible: no glow, no ring, no signs. Only the dosimeter tells you where it is.
+	zones.append({"x": x, "z": z, "r": r, "s": s})
 
 func add_guard(cx: float, cz: float, r: float) -> void:
 	var gd = make_guard(); world.add_child(gd.g)
@@ -1067,6 +1220,7 @@ func load_level(i: int) -> void:
 	li = i; var L: Dictionary = LEVELS[i]; rng.seed = 1000 + i * 7919
 	world = Node3D.new(); add_child(world)
 	circles = []; boxes = []; reserved = []; items = []; tokens = []; zones = []; guards = []; debris = []; traps = []; lamps = []; queue = []; anims = []; pops = []
+	egg = {}
 	built = 0; need = STAGE_COUNTS[i]; done_t = -1.0; debris_t = 3.0; level_t = 0.0; lost_level = 0; radio_done = {}; crane_pc = null; step_phase = 0
 	sky_mat.sky_top_color = C(L.sky_top); sky_mat.sky_horizon_color = C(L.sky_hor)
 	sky_mat.ground_horizon_color = C(L.fog); sky_mat.ground_bottom_color = C(L.fog).darkened(0.4)
@@ -1276,7 +1430,7 @@ func update_menu_progress() -> void:
 		cont = "ПРОДОЛЖИТЬ · CONTINUE: LEVEL %d" % (u + 1)
 	var prog = ""
 	if total_stars() > 0 or u > 0:
-		prog = "Stars earned: %d / 9" % total_stars()
+		prog = "Stars earned: %d / 9" % total_stars() + ("   ·   Secret found!" if save.get("egg", false) else "")
 	hud.set_menu_progress(cont, prog)
 
 func radio(key: String, ru: String, en: String, delay: float = 0.0) -> void:
@@ -1331,7 +1485,9 @@ func end_cutscene() -> void:
 func level_banner() -> void:
 	var L: Dictionary = LEVELS[li]
 	match li:
-		0: radio("start", "Олег, приём! Это пульт управления.", "Oleg, come in! This is the control room. Bring the materials to the yellow construction pad.", 10.0)
+		0:
+			radio("start", "Олег, приём! Это пульт управления.", "Oleg, come in! This is the control room. Bring the materials to the yellow construction pad.", 10.0)
+			radio("radtip", "Радиацию не видно. Слушай дозиметр!", "Remember: radiation is invisible. Listen to your dosimeter. Faster clicks mean danger!", 22.0)
 		1: radio("start", "Олег, в Припяти опасно. Смотри наверх!", "Oleg, Pripyat is dangerous. Watch out for junk falling from the roofs!", 10.0)
 		_: radio("start", "Ночная смена, Олег. Последний рывок!", "Night shift, Oleg. One last push: the new roof over the reactor hall!", 10.0)
 	hud.show_msg("УРОВЕНЬ %d: %s" % [li + 1, L.ru], L.en + " — " + L.tip_en, 5.0)
@@ -1565,11 +1721,11 @@ func _process(delta: float) -> void:
 		for z in zones:
 			var d = Vector2(P.x - z.x, P.z - z.z).length()
 			if d < z.r: rad_rate += z.s * (1.0 + (1.0 - d / z.r))
-			elif d < z.r * 1.8: rad_rate += z.s * 0.3 * pow(1.0 - (d - z.r) / (z.r * 0.8), 2)
+			elif d < z.r * 2.4: rad_rate += z.s * 0.4 * pow(1.0 - (d - z.r) / (z.r * 1.4), 2)
 		if rad_rate > 0.45: P.dose += rad_rate * 20.0 * delta
 		else: P.dose = maxf(0.0, P.dose - (2.0 if rad_rate > 0.05 else 7.0) * delta)
 		if P.dose >= 100.0: hurt("rad")
-		if P.dose > 45.0: radio("dose", "Олег, доза растёт! Уходи оттуда!", "Oleg, your dose is rising! Get out of the green glow!")
+		if P.dose > 45.0: radio("dose", "Олег, доза растёт! Уходи оттуда!", "Oleg, your dose is rising! Follow the clicks: walk where they slow down!")
 		if randf() < (0.6 + rad_rate * 35.0) * delta:
 			sfx.play("click", -4.0, randf_range(0.8, 1.3)); hud.flash_led()
 		# guards
@@ -1610,7 +1766,7 @@ func _process(delta: float) -> void:
 					if boxes.any(func(b): return x > b.position.x - 1 and x < b.end.x + 1 and z > b.position.y - 1 and z < b.end.y + 1):
 						continue
 					spawn_debris(x, z); break
-		update_debris(delta); update_traps(delta)
+		update_debris(delta); update_traps(delta); update_egg(delta)
 		# compass
 		var left = items.filter(func(i): return not i.got)
 		var tx = PAD.x; var tz = PAD.y; var lbl = "Стройка · Construction site"; var ccol = C(0xd9a441); var cicon = "site"
@@ -1649,6 +1805,8 @@ func _process(delta: float) -> void:
 	if photo:
 		photo_t += delta; var pa = 0.6 + photo_t * 0.12
 		cam.position = Vector3(-6 + sin(pa) * 62, 26 + sin(photo_t * 0.2) * 8, -37 + cos(pa) * 62); cam.look_at(Vector3(-6, 22, -37))
+	elif state == "play" and egg.get("inside", false):
+		cam.position = cam.position.lerp(Vector3(22.35, 4.15, -29.0 + (P.z + 29.0) * 0.25), minf(1.0, 4.0 * delta)); cam.look_at(Vector3(17.8, 1.3, -29.0 + (P.z + 29.0) * 0.2))
 	elif state == "crane" and crane_pc != null:
 		var t3: Vector3 = crane_pc.target
 		cam.position = cam.position.lerp(Vector3(t3.x + 2, t3.y + 34, t3.z + 30), minf(1.0, 2.5 * delta)); cam.look_at(Vector3(t3.x, t3.y, t3.z - 2))
@@ -1845,8 +2003,6 @@ func ambient(delta: float) -> void:
 	for t in tokens:
 		if t.got: continue
 		t.st.rotation.y += delta * 2.5; t.st.position.y = 1.2 + sin(clock_t * 3) * 0.15
-	for z in zones:
-		z.ph += delta; z.dm.albedo_color.a = 0.45 + 0.2 * sin(z.ph * 2); z.ring.scale = Vector3.ONE * (1.0 + 0.03 * sin(z.ph * 3))
 	for l in lamps:
 		var f = sin(clock_t * 13 + l.ph) * sin(clock_t * 7.3 + l.ph * 2); var on = f > -0.85
 		l.L.light_energy = 1.3 + f * 0.15 if on else 0.1; l.bulb.albedo_color = C(0xffd08a) if on else C(0x332a20)

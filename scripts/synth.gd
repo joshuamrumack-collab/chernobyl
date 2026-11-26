@@ -30,6 +30,7 @@ func _ready() -> void:
 	b = _buf(0.45); _tone(b, 0, 300, 0.4, "tri", 0.5, 90); _make("hurt", b)
 	b = _buf(0.35); _noise(b, 0, 0.25, 0.4, 0.4); _tone(b, 0, 700, 0.3, "sine", 0.15, 200); _make("pop", b)
 	b = _buf(0.03); _noise(b, 0, 0.014, 1.6, 0.35, true); _tone(b, 0, 3200, 0.01, "sq", 0.25); _make("click", b, 8)
+	_make("egg", _fife())
 	b = _buf(0.12); _noise(b, 0, 0.1, 0.9, 0.06); _make("step_soft", b, 4)
 	b = _buf(0.1); _noise(b, 0, 0.06, 0.7, 0.35); _tone(b, 0, 180, 0.05, "sine", 0.35, 90); _make("step_hard", b, 4)
 	b = _buf(0.5); _noise(b, 0, 0.35, 0.35, 0.5, true); _tone(b, 0.0, 1400, 0.06, "sq", 0.12); _tone(b, 0.38, 1400, 0.06, "sq", 0.12); _make("radio", b, 2)
@@ -147,6 +148,22 @@ func _fanfare() -> PackedFloat32Array:
 		for m in chords[i]:
 			_tone(b, i * 0.38, _mtof(m), d, "saw", 0.09)
 		_tone(b, i * 0.38, _mtof(chords[i][0] - 12), d, "tri", 0.3)
+	return b
+
+## Short original fife-and-drum march for the Easter egg.
+func _fife() -> PackedFloat32Array:
+	var notes := [[74, 0.25], [79, 0.25], [79, 0.25], [81, 0.25], [83, 0.5], [79, 0.5], [81, 0.25], [83, 0.25], [84, 0.25], [86, 0.25], [83, 0.5], [79, 0.5],
+		[86, 0.25], [84, 0.25], [83, 0.25], [81, 0.25], [79, 0.25], [81, 0.25], [83, 0.25], [78, 0.25], [79, 1.0]]
+	var b := _buf(6.5); var t := 0.1
+	for n in notes:
+		var d: float = n[1] * 0.42
+		_tone(b, t, _mtof(n[0]), d * 0.95, "tri", 0.22); _tone(b, t, _mtof(n[0]) * 2.0, d * 0.5, "sine", 0.05)
+		t += d
+	var dt := 0.1
+	while dt < t:
+		_noise(b, dt, 0.08, 0.5, 0.5); _tone(b, dt, 120, 0.1, "sine", 0.35, 70)
+		_noise(b, dt + 0.21, 0.05, 0.25, 0.6)
+		dt += 0.42
 	return b
 
 func _anthem() -> PackedFloat32Array:

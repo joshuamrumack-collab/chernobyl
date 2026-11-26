@@ -35,7 +35,7 @@ The game opens on a hero shot: Oleg stands on the hill beside a waving Soviet fl
 | G | Graphics: high (HQ) / low (LQ) |
 | P | Photo mode (the camera circles the plant) |
 
-Green glowing areas are radiation: stay out, or your dose fills up. Red stars give extra lives. Guards with flashlights send you back to your checkpoint.
+Radiation is invisible, just like in real life. Listen to the ДП-5 dosimeter: the faster it clicks and the further the needle swings, the closer you are to a hot spot. Turn back before your dose bar fills up. Red stars give extra lives. Guards with flashlights send you back to your checkpoint.
 
 ## Open the project
 1. Install Godot 4.7 (standard version, not .NET).
